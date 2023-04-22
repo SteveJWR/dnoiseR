@@ -3,6 +3,16 @@
 #        ker, number of repeated observations per individual; integer
 #        h, bandwidth; > 0
 # Output: Conditional Distribution Function for the Measurement Kernel Model
+
+#' Conditional distribution function for the measurement kernel model
+#'
+#' @param N Number of Questions
+#' @param ker Measurement Kernel
+#' @param h Bandwidth
+#'
+#' @return Conditional distribution function for the measurement kernel model
+#' @export
+#'
 conditional_mkm <- function(N, ker, h){
   #ensuring these don't change when changing definitions of N,ker and h
   force(N)
@@ -16,6 +26,19 @@ conditional_mkm <- function(N, ker, h){
   return(out.function)
 }
 
+
+#' Conditional distribution function for the binomial model
+#'
+#' @param N Number of Questions
+#'
+#' @return Conditional distribution function for the binomial model
+#' @export
+#'
+generate_cond_binomial <- function(N){
+  out.function <- function(x){
+    dbinom(0:N,size = N, prob = x)
+  }
+}
 
 
 ##   Latent model fitting functions  ----------------------------------------
@@ -90,62 +113,63 @@ sample_latent_conditional <- function(y.obs, n.mc.samp, tau, latent.trait.quanti
 #        n.mc.samp:  number of monte carlo samples from the em update step
 # Output: a vector of samples from gamma|Y
 
-sample_mc_em <- function(p.hat, mu, tau, latent.trait.quantiles, cond, n.mc.samp){
-  # tau and quantiles must be of the same length
-  # must be ordered
-
-  N <- length(cond(0.5)) - 1
-
-  n.tau <- length(tau) - 1
-  n.parallel <- n.mc.samp # blocking sampling
-
-  weights <- c()
-  for(i in 1:n.tau){
-    weights[i] <- tau[i + 1] - tau[i]
-  }
-  # weights based on differences of quantiles
-
-  gamma.em.step <- c()
-
-  while (length(gamma.em.step) < n.mc.samp){
-    y.hat.samp <- sample(0:N, size = n.parallel, replace = TRUE, prob = p.hat)
-
-    frequencies <- n.parallel*compute_edf(y.hat.samp,N)
-    # monte carlo sampled from the nonparametric em algorithm
-    gamma.em.step.samp <- lapply(0:N, function(x){
-      num.samples <- frequencies[x + 1]
-
-      if(num.samples > 0){
-        out <- sample_latent_conditional(y.obs = x,
-                                         n.mc.samp = num.samples,
-                                         tau = tau,
-                                         latent.trait.quantiles = latent.trait.quantiles,
-                                         cond = cond)
-      } else {
-        out <- c()
-      }
-
-      return(out)
-    })
-    gamma.em.step.samp <- unlist(gamma.em.step.samp)
-    gamma.em.step <- c(gamma.em.step, gamma.em.step.samp)
-
-  }
-  gamma.em.step <- gamma.em.step[1:n.mc.samp]
-
-  if(mu > 0){
-    n.mixture <- round(n.mc.samp*mu) # round to nearest integer
-    uniform.mixture <- runif(n.mixture)
-    out <- c(gamma.em.step,uniform.mixture)
-  } else {
-    out <- gamma.em.step
-  }
-  return(out)
-}
-
-
+# sample_mc_em <- function(p.hat, mu, tau, latent.trait.quantiles, cond, n.mc.samp){
+#   # tau and quantiles must be of the same length
+#   # must be ordered
+#
+#   N <- length(cond(0.5)) - 1
+#
+#   n.tau <- length(tau) - 1
+#   n.parallel <- n.mc.samp # blocking sampling
+#
+#   weights <- c()
+#   for(i in 1:n.tau){
+#     weights[i] <- tau[i + 1] - tau[i]
+#   }
+#   # weights based on differences of quantiles
+#
+#   gamma.em.step <- c()
+#
+#   while (length(gamma.em.step) < n.mc.samp){
+#     y.hat.samp <- sample(0:N, size = n.parallel, replace = TRUE, prob = p.hat)
+#
+#     frequencies <- n.parallel*compute_edf(y.hat.samp,N)
+#     # monte carlo sampled from the nonparametric em algorithm
+#     gamma.em.step.samp <- lapply(0:N, function(x){
+#       num.samples <- frequencies[x + 1]
+#
+#       if(num.samples > 0){
+#         out <- sample_latent_conditional(y.obs = x,
+#                                          n.mc.samp = num.samples,
+#                                          tau = tau,
+#                                          latent.trait.quantiles = latent.trait.quantiles,
+#                                          cond = cond)
+#       } else {
+#         out <- c()
+#       }
+#
+#       return(out)
+#     })
+#     gamma.em.step.samp <- unlist(gamma.em.step.samp)
+#     gamma.em.step <- c(gamma.em.step, gamma.em.step.samp)
+#
+#   }
+#   gamma.em.step <- gamma.em.step[1:n.mc.samp]
+#
+#   if(mu > 0){
+#     n.mixture <- round(n.mc.samp*mu) # round to nearest integer
+#     uniform.mixture <- runif(n.mixture)
+#     out <- c(gamma.em.step,uniform.mixture)
+#   } else {
+#     out <- gamma.em.step
+#   }
+#   return(out)
+# }
 
 
+
+
+# Oldname: compute_loglikelihood_from_latent
 # Function: computes the loglikelihood value from
 # Input: y.obs: the observed score value
 #        mu:  regularization parameter
@@ -154,6 +178,7 @@ sample_mc_em <- function(p.hat, mu, tau, latent.trait.quantiles, cond, n.mc.samp
 #        cond: function defining the conditional distribution of Y|gamma; function [0,1] -> {0, ..., N}
 #        n.mc.samp:  number of monte carlo samples from the em update step
 # Output: a vector of samples from gamma|Y
+
 
 
 compute_loglikelihood_from_latent <- function(p.hat, p.ma, tau,
@@ -192,6 +217,46 @@ compute_loglikelihood_from_latent <- function(p.hat, p.ma, tau,
 
 
 
+# Function: compute the A matrix for a binned latent approximation
+# Input: R_bins, the number of uniform latent bins  must an integer
+#        cond, function defining the conditional distribution of Y|gamma; function [0,1] -> {0, ..., N}
+#        numeric.points,  number of points used in the numeric approximation of A
+# Output: latent: weights in each bin in the latent distribution
+#         observed: list of probabilities assigned to each test score value
+
+
+
+#' Compute conditional distribution matrix
+#'
+#' @param R_bins The number of latent bins to choose
+#' @param cond Conditional distribution
+#' @param verbose Verbose parameter
+#'
+#' @return Conditional Distribution Matric Form
+#' @export
+#'
+compute_A_matrix <- function(R_bins, cond, numeric.points = 100, verbose = F){
+  N <- length(cond(0.5)) - 1
+  A_matrix <- matrix(data = NA, nrow = N + 1, ncol = R_bins)
+  for(i in 1:R_bins){
+    design.points <- seq((i - 1)/R_bins, (i)/R_bins, length.out = numeric.points)
+    A.row <- rep(0, N+1)
+    for(j in 1:numeric.points){
+      y = 0:N
+      weights <- cond(design.points[j])
+      A.row <- A.row + weights/(sum(weights))
+    }
+    A.row <- A.row/sum(A.row)
+    A_matrix[,i] = A.row
+    if(verbose){
+      cat(paste0("A Matrix Computed Row: ", i,"/",R_bins), end="\r")
+    }
+  }
+  return(A_matrix)
+}
+
+
+
 
 # Function: compute the A tensor using a binned latent approximation
 # Input: R_bins, the number of uniform latent bins  must an integer
@@ -199,8 +264,9 @@ compute_loglikelihood_from_latent <- function(p.hat, p.ma, tau,
 #        numeric.points,  number of points used in the numeric approximation of A
 # Output: latent: weights in each bin in the latent distribution
 #         observed: list of probabilities assigned to each test score value
-
-compute_A_two_obs_tensor <- function(R_bins, cond, numeric.points = 100, verbose = F){
+#' @export
+#'
+compute_A_tensor <- function(R_bins, cond, numeric.points = 100, verbose = F){
   # 3d Array for faster computation.
   N <- length(cond(0.5)) - 1
   A_3D <- array(NA, dim = c(N+1,N+1,R_bins))
@@ -225,3 +291,36 @@ compute_A_two_obs_tensor <- function(R_bins, cond, numeric.points = 100, verbose
 
   return(A_3D)
 }
+
+
+
+# faster than the previous version
+#' @export
+#'
+compute_A_matrix_2 <- function(R.bins, cond){
+  grid <- seq(0,R.bins -1)/(R.bins - 1)
+  A.out <- sapply(grid,function(z){
+    out <- cond(z)
+    out <- out/sum(out)
+    return(out)
+  })
+  return(A.out)
+}
+
+#' @export
+#'
+compute_A_tensor_2 <- function(R.bins, cond){
+  grid <- seq(0,R.bins -1)/(R.bins - 1)
+  #grid <- array(grid,c(length(grid),1,1))
+  N <- length(cond(0.5)) - 1
+  A.out <- vapply(grid,function(z){
+    out <- cond(z)
+    out.mat <- outer(out,out,"*")
+    out.mat <- out.mat/sum(out.mat)
+    return(out.mat)
+  }, FUN.VALUE = array(0,c(N + 1,N + 1)))
+  return(A.out)
+}
+
+
+

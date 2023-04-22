@@ -1,9 +1,8 @@
-
-
+#TODO: Change the name in the simulations to the fit npem algorithm
 
 # Function: applies the nonparametric EM algorithm to compute the possibly regularized npmle
 # Input: p.hat: empirical distribution of the observed scores
-#        cond: function defining the conditional distribution of Y|gamma; function [0,1] -> {0, ..., N}
+#        cond: function defining the conditional distribution of Y|gamma
 #        R_bins:  number of bins (quantiles) to sample from
 #        mu:  regularization parameter
 #        n.mc.samp: number of monte-carlo samples per iteration of the nonparametric em algorithm
@@ -82,24 +81,22 @@ fit_nonpar_em <- function(p.hat, cond,  R_bins = 300, mu = 0, n.mc.samp = 1000, 
 
 
 
-
-
-
-
-
-# Function: Estimate the latent distribution using a convex solver
-# Input: p.hat, a discrete empirical distribution function;  numeric
-#        A.matrix, matrix which maps a vector of uniform bins to the observed data; matrix
-#        mu,  regularization parameter; >= 0
-# Output: latent: weights in each bin in the latent distribution
-#         observed: list of probabilities assigned to each test score value
-
-estimate_mixing_numeric <- function(p.hat, A.matrix, mu){
+#' CVX implementation
+#'
+#' @param p.hat Discrete empirical distribution function
+#' @param A.matrix  Conditional distribution Matrix
+#' @param mu Regularization Parameter
+#' @param cvx.solver Which solver to use
+#'
+#' @return latent trait and observed distribution
+#' @export
+#'
+estimate_mixing_numeric <- function(p.hat, A.matrix, mu = 0, cvx.solver = "SCS"){
 
   R.bins <- ncol(A.matrix) # number of bins in the latent distribution
   N <- nrow(A.matrix) - 1 # number of scores
-  theta <- Variable(R.bins, name = "latent discretized distribution") # values of the weight vector
-  obs.dist <- Variable(N + 1, name = "model observed distribution") # values of the observed distribution
+  theta <- CVXR::Variable(R.bins, name = "latent discretized distribution") # values of the weight vector
+  obs.dist <- CVXR::Variable(N + 1, name = "model observed distribution") # values of the observed distribution
 
   data.obj <-  t(p.hat) %*% log(obs.dist)
   pen.obj <- (mu/R.bins)*t(rep(1, R.bins)) %*% log(theta)
@@ -111,25 +108,245 @@ estimate_mixing_numeric <- function(p.hat, A.matrix, mu){
   )
 
   obj.arg <- data.obj + pen.obj
-  obj <- Maximize(obj.arg)
-  p <- Problem(obj, constraints)
+  obj <- CVXR::Maximize(obj.arg)
+  p <- CVXR::Problem(obj, constraints)
 
 
   #value(theta) <- rep(1/R.bins, R.bins) # initial guess of a uniform distribution
-  result <- solve(p, solver = "MOSEK")
+  result <- CVXR::solve(p, solver = cvx.solver)
   #result <- solve(p, verbose = TRUE)
 
   p.m <- result$getValue(theta)
   p.ma <- result$getValue(obs.dist)
   out.list <- list("latent" = p.m, "observed" = p.ma)
   return(out.list)
-
 }
 
 
 
 
+#' Nonparametric EM Algorithm for latent trait
+#'
+#' @param p.hat Discrete empirical distribution function
+#' @param A.matrix  Conditional distribution Matrix
+#' @param mu Regularization Parameter
+#' @param threshold Threshold for the change in the likelihood
+#' @param verbose
+#'
+#' @return latent trait and observed distribution
+#' @export
+#'
+estimate_mixing_npem <- function(p.hat, A.matrix, mu = 0, threshold = 5*10**(-5),  verbose = F, max.iter = 50){
+    R_bins = ncol(A.matrix)
+    uniform.latent <- rep(1, R_bins)
+    uniform.latent <- uniform.latent/sum(uniform.latent)
+    latent.trait.init <- uniform.latent
+    latent.trait <- latent.trait.init
+    p.ma.init <- A.matrix %*% latent.trait.init
+    like.old <- -Inf
+    diff = Inf
+    iter = 1
+    while (abs(diff) > threshold & iter <= max.iter) {
+      p.y.gamma.joint <- t(t(A.matrix) * latent.trait)
+      p.gamma.given.y <- p.y.gamma.joint/rowSums(p.y.gamma.joint)
+      latent.trait.new <- as.numeric(t(p.gamma.given.y) %*%
+                                       p.hat * (1/(1 + mu))) + (mu/(1 + mu)) * uniform.latent
+      latent.trait.new = latent.trait.new/sum(latent.trait.new)
+      p.ma.new = A.matrix %*% latent.trait.new
+      if(mu != 0){
+        like.new <- -kl_divergence(p.hat, p.ma.new) - mu * kl_divergence(uniform.latent,
+                                                                         latent.trait.new)
+      } else {
+        like.new <- -kl_divergence(p.hat, p.ma.new)
+      }
 
+      diff = like.new - like.old
+      if (verbose) {
+        if (iter%%10 == 1) {
+          cat(paste0("Likelihood Change: ", diff), end = "\r")
+        }
+      }
+      delta.gamma.vec = latent.trait.new - latent.trait.new
+      latent.trait = latent.trait.new
+      like.old = like.new
+      iter = iter + 1
+    }
+    out.list <- list(latent = latent.trait, observed = as.numeric(p.ma.new))
+    return(out.list)
+}
+
+
+# npem algorithm for the bivariate likelihood part 2
+#' @export
+#'
+estimate_mixing_npem_2 <- function(Y, A.matrix, A.tensor, weights, mu = 0, threshold = 5*10**(-5),  verbose = F, max.iter = 50) {
+
+  if(ncol(Y) != 2){
+    stop("Y must have 2 columns" )
+  }
+  if(any(is.na(Y[,1]))){
+    stop("Y cannot have missingness in first column")
+  }
+  if(missing(weights)){
+    weights <- rep(1,nrow(Y))
+  }
+  if(missing(mu)){
+    mu = 0
+  }
+  n.obs <- nrow(Y)
+  N <- nrow(A.matrix) - 1 # number of scores
+  R.bins <- ncol(A.matrix)
+  count.vector <- rep(0,N + 1)
+  count.matrix <- matrix(0,N+1, N+1)
+
+
+  #
+  uniform.latent <- rep(1,R_bins)
+  uniform.latent <- uniform.latent/sum(uniform.latent)
+
+  latent.trait.init <- uniform.latent
+
+
+
+  A.ten.mat <- A.tensor
+  # converting the dimension of the tensor to a matrix
+
+  dim(A.ten.mat) <- c((N + 1)^2,R.bins)
+
+  #NA's can be allowed in second column only
+  for(i in seq(nrow(Y))){
+    if(!any(is.na(Y[i,]))){
+      count.matrix[Y[i,1] + 1,Y[i,2] + 1] <- count.matrix[Y[i,1] + 1,Y[i,2] + 1] + weights[i]
+    } else {
+      count.vector[Y[i,1] + 1] <- count.vector[Y[i,1] + 1] + weights[i]
+    }
+
+  }
+
+  # need to vectorize the matrix counts
+  count.mat.vec <- count.matrix
+  dim(count.mat.vec) <- (N + 1)^2
+  n.w = sum(weights)
+
+  n.w1 = sum(count.vector)
+  n.w2 = sum(count.matrix)
+
+  p.hat.1 = as.numeric(count.vector/n.w1)
+  p.hat.2 = as.numeric(count.mat.vec/n.w2)
+
+  like.old <- -Inf
+  latent.trait = latent.trait.init
+  delta.gamma.vec = rep(0,R.bins)
+
+  diff = Inf
+  iter = 1
+  while(abs(diff) > threshold & iter <= max.iter){
+    p.y.gamma.joint1 <- t(t(A.matrix) * latent.trait)
+    p.y.gamma.joint2 <- t(t(A.ten.mat) * latent.trait)
+
+    p.gamma.given.y1 <- p.y.gamma.joint1 / rowSums(p.y.gamma.joint1)
+    p.gamma.given.y2 <- p.y.gamma.joint2 / rowSums(p.y.gamma.joint2)
+
+    latent.trait.new <- as.numeric((t(p.gamma.given.y1) %*% count.vector + t(p.gamma.given.y2) %*% count.mat.vec)) * (1/(n.w*(1 + mu))) + (mu/(1 + mu))*uniform.latent #+ momentum*delta.gamma.vec
+#    latent.trait.new[latent.trait.new < (mu/((1 + mu)*R.bins))] = (mu/((1 + mu)*R.bins))
+    latent.trait.new = latent.trait.new/sum(latent.trait.new)
+
+
+    p.ma.new1 = A.matrix %*% latent.trait.new
+    p.ma.new2 = A.ten.mat %*% latent.trait.new
+
+    like.new <- -kl_divergence(p.hat.1,p.ma.new1)  -kl_divergence(p.hat.2,p.ma.new2) - mu* kl_divergence(uniform.latent, latent.trait.new)
+
+    diff = like.new - like.old
+    if(verbose){
+      if(iter %% 10 == 1){
+        cat(paste0("Likelihood Change: ", diff), end = "\r")
+      }
+
+      # if(iter %% 100 == 1){
+      #   plot(latent.trait)
+      #   plot(latent.trait.new)
+      # }
+    }
+    delta.gamma.vec = latent.trait.new - latent.trait
+    latent.trait <- latent.trait.new
+    like.old <- like.new
+    iter = iter + 1
+  }
+
+  out.list <- list("latent" = latent.trait, "observed" = as.numeric(p.ma.new1))
+  return(out.list)
+}
+
+
+#' @export
+#'
+estimate_mixing_numeric_2 <- function(Y, A.matrix, A.tensor, mu, weights,cvx.solver = "SCS"){
+
+
+  if(ncol(Y) != 2){
+    stop("Y must have 2 columns" )
+  }
+  if(any(is.na(Y[,1]))){
+    stop("Y cannot have missingness in first column")
+  }
+  if(missing(weights)){
+    weights <- rep(1,nrow(Y))
+  }
+  if(missing(mu)){
+    mu = 0
+  }
+  n.obs <- nrow(Y)
+  N <- nrow(A.matrix) - 1 # number of scores
+  R.bins <- ncol(A.matrix)
+  count.vector <- rep(0,N + 1)
+  count.matrix <- matrix(0,N+1, N+1)
+
+
+  A.ten.mat <- A.tensor
+  # converting the dimension of the tensor to a matrix
+
+  dim(A.ten.mat) <- c((N + 1)^2,R.bins)
+
+  #NA's can be allowed in second column only
+  for(i in seq(nrow(Y))){
+    if(!any(is.na(Y[i,]))){
+      count.matrix[Y[i,1] + 1,Y[i,2] + 1] <- count.matrix[Y[i,1] + 1,Y[i,2] + 1] + weights[i]
+    } else {
+      count.vector[Y[i,1] + 1] <- count.vector[Y[i,1] + 1] + weights[i]
+    }
+
+  }
+  # need to vectorize the matrix counts
+  count.mat.vec <- count.matrix
+  dim(count.mat.vec) <- (N + 1)^2
+
+  theta <- CVXR::Variable(R.bins, name = "latent discretized distribution") # values of the weight vector
+
+  data.obj1 <-  t(count.vector) %*% log(A.matrix %*% theta)
+  data.obj2 <-  t(count.mat.vec) %*% log(A.ten.mat %*% theta)
+  pen.obj <- n.obs*(mu/R.bins)*t(rep(1, R.bins)) %*% log(theta)
+
+  constraints <- list(
+    #obs.dist == A.matrix %*% theta,
+    sum(theta) <= 1#,
+    #mu/(R.bins*(1 + mu)) <= theta
+  )
+
+  obj.arg <- data.obj1 + data.obj2 + pen.obj
+  obj <- CVXR::Maximize(obj.arg)
+  prob <- CVXR::Problem(obj, constraints)
+
+
+  #value(theta) <- rep(1/R.bins, R.bins) # initial guess of a uniform distribution
+  result <- CVXR::solve(prob, solver = cvx.solver)
+  #result <- solve(p, verbose = TRUE)
+
+  p.m <- result$getValue(theta)
+  p.ma <- A.matrix %*% p.m
+  out.list <- list("latent" = p.m, "observed" = p.ma)
+  return(out.list)
+}
 
 
 
