@@ -17,7 +17,6 @@ JointDistribution <- function(gamma, zeta, n.quantiles = 10 * max(c(length(gamma
   i.set = rep(NA, length(q.grid))
   j.set = rep(NA, length(q.grid))
   x.set = rep(NA, length(q.grid))
-  cdf.g = cumsum(gamma)
   cdf.g = cdf.g/max(cdf.g)
   cdf.z = cumsum(zeta)
   cdf.z = cdf.z/max(cdf.z)
@@ -77,319 +76,296 @@ unique_X <- function(X){
 #' @param ref.cols reference columns
 #' @param ker.set Kernels for smoothing over X parameters
 #' @param R.bins Number of bins for model parameter
+#' @param B.boot Number of Bootstrap iterations
 #'
 #' @export
 #'
 ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
                            Y.train,Z.train,cond.y,cond.z,
-                           mu.y,mu.z,ref.cols, ker.set,R.bins = 1000, threshold = 5*10**(-5)){
+                           mu.y,mu.z,ref.cols, ker.set,R.bins = 1000,
+                           threshold = 5*10**(-5), max.iter = 50,
+                           verbose = F, init.latents = NA,
+                           latent.set.covariates = NA,
+                           init.latent.set.y = NA,
+                           init.latent.set.z = NA){
   # when missing reference columns, we no longer adjust for covariates.
-  if(missing(ref.cols) | missing(ker.set)){
-
-
-    if(missing(n.impute)){
+  if (missing(ref.cols) | missing(ker.set)) {
+    if (missing(n.impute)) {
       stop("must indicate number of imputations")
     }
-    if(missing(cond.y) | missing(cond.y)){
+    if (missing(cond.y) | missing(cond.y)) {
       stop("must specify conditional distributions")
     }
-    if(missing(mu.y) | missing(mu.z)){
+    if (missing(mu.y) | missing(mu.z)) {
       stop("must specify regularization parameters")
     }
-    if(missing(Y.train) | missing(Z.train)){
+    if (missing(Y.train) | missing(Z.train)) {
       stop("must specify training data")
     }
-
-    Ny <- length(cond.y(.5)) - 1
-    Nz <- length(cond.z(.5)) - 1
-
-    A.matrix.y <- compute_A_matrix_2(R.bins,cond.y)
-    A.tensor.y <- compute_A_tensor_2(R.bins,cond.y)
-
-    A.matrix.z <- compute_A_matrix_2(R.bins,cond.z)
-    A.tensor.z <- compute_A_tensor_2(R.bins,cond.z)
-
-    #
-    y.tr <- Y.train[,c("y1","y2")]
-    z.tr <- Z.train[,c("z1","z2")]
-
-
-    cond.block <- array(NA, c(nrow(X.ref),Ny + 1,Nz + 1))
-
-
+    Ny <- length(cond.y(0.5)) - 1
+    Nz <- length(cond.z(0.5)) - 1
+    A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
+    #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
+    A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
+    #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
+    # columns for the simulations
+    outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
+    y.tr <- Y.train[, outcome.cols.y]
+    z.tr <- Z.train[, outcome.cols.z]
+    cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+    cond.block.Boot <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
     p.hat.y <- compute_edf(y.tr, Ny)
     p.hat.z <- compute_edf(z.tr, Nz)
-
-    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y)
-    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z)
+    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y, threshold = threshold, max.iter = max.iter)
+    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z, threshold = threshold, max.iter = max.iter)
     mixture.y <- mix.y$latent
     mixture.z <- mix.z$latent
-
-    p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,cond.z,mixture.y,mixture.z)
-    for(id in 1:nrow(X.ref)){
-      cond.block[id,,] <- p.z.cond.y.slice
+    p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
+                                                       cond.z, mixture.y, mixture.z)
+    for (id in 1:nrow(X.ref)) {
+      cond.block[id, , ] <- p.z.cond.y.slice
     }
-
-    cond.mat <- matrix(NA,nrow(X.ref),Nz + 1)
-    #relatively fast
-    for(j in seq(length(y.ref))){
-      # the offset of the block
-      # when y.ref = 0 strange results occur
-      if(!is.na(y.ref[j])){
-        cond.mat[j,] <- cond.block[j,y.ref[j] + 1,]
-      } else {
-        cond.mat[j,] <- rep(1/(Nz + 1), Nz + 1)
+    cond.mat <- matrix(NA, nrow(X.ref), Nz + 1)
+    for (j in seq(length(y.ref))) {
+      if (!is.na(y.ref[j])) {
+        cond.mat[j, ] <- cond.block[j, y.ref[j] + 1,
+        ]
       }
-
-    }
-
-    # much faster than before
-    Z.imp <- matrix(NA,length(y.ref),n.impute)
-    for(k in 1:length(y.ref)){
-      if(!is.na(y.ref[k])){
-        p.vec <- as.numeric(cond.mat[k,])
-        Z.imp.row <- sample(seq(0,Nz), n.impute, prob = p.vec, replace = T)
-        Z.imp[k,] <- Z.imp.row
-      } else {
-        Z.imp[k,] <- rep(NA,n.impute)
+      else {
+        cond.mat[j, ] <- rep(1/(Nz + 1), Nz + 1)
       }
-
     }
-
-    # placing the true outcomes in the NA
-    # blocks for ease of imputation.
-    na.idx <- which(is.na(Z.imp[,1]))
-    for(i in na.idx){
-      Z.imp[i,] <- z.ref[i]
+    Z.imp <- matrix(NA, length(y.ref), n.impute)
+    for (k in 1:length(y.ref)) {
+      if (!is.na(y.ref[k])) {
+        p.vec <- as.numeric(cond.mat[k, ])
+        Z.imp.row <- sample(seq(0, Nz), n.impute, prob = p.vec,
+                            replace = T)
+        Z.imp[k, ] <- Z.imp.row
+      }
+      else {
+        Z.imp[k, ] <- rep(NA, n.impute)
+      }
     }
-
+    na.idx <- which(is.na(Z.imp[, 1]))
+    for (i in na.idx) {
+      Z.imp[i, ] <- z.ref[i]
+    }
   } else {
-    if(length(ref.cols) == 1){
-      X.un <- data.frame("tmp" = unique((X.ref[,ref.cols])))
-    } else {
-      X.un <-unique_X(X.ref[,ref.cols])
+    if (length(ref.cols) == 1) {
+      X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
+    }
+    else {
+      X.un <- unique_X(X.ref[, ref.cols])
     }
     colnames(X.un) = ref.cols
-
-    if(length(ref.cols) != length(ker.set)){
+    if (length(ref.cols) != length(ker.set)) {
       stop("ref.cols and ker.set must be the same length")
     }
-    if(missing(n.impute)){
+    if (missing(n.impute)) {
       stop("must indicate number of imputations")
     }
-    if(missing(cond.y) | missing(cond.y)){
+    if (missing(cond.y) | missing(cond.y)) {
       stop("must specify conditional distributions")
     }
-    if(missing(mu.y) | missing(mu.z)){
+    if (missing(mu.y) | missing(mu.z)) {
       stop("must specify regularization parameters")
     }
-    if(missing(Y.train) | missing(Z.train)){
+    if (missing(Y.train) | missing(Z.train)) {
       stop("must specify training data")
     }
+    Ny <- length(cond.y(0.5)) - 1
+    Nz <- length(cond.z(0.5)) - 1
+    A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
+    #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
+    A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
+    #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
+    outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
+    y.tr <- Y.train[, outcome.cols.y]
+    z.tr <- Z.train[, outcome.cols.z]
 
-    Ny <- length(cond.y(.5)) - 1
-    Nz <- length(cond.z(.5)) - 1
-
-    A.matrix.y <- compute_A_matrix_2(R.bins,cond.y)
-    A.tensor.y <- compute_A_tensor_2(R.bins,cond.y)
-
-    A.matrix.z <- compute_A_matrix_2(R.bins,cond.z)
-    A.tensor.z <- compute_A_tensor_2(R.bins,cond.z)
-
-    ## Think about how to generalize this
-    # These should always be the same
-    y.tr <- Y.train[,c("y1","y2")]
-    z.tr <- Z.train[,c("z1","z2")]
-
-    #
-    #ref.cols <- colnames(X.ref)
-    X.train.Y <- as.data.frame(Y.train[,ref.cols])
-    X.train.Z <- as.data.frame(Z.train[,ref.cols])
-
+    X.train.Y <- as.data.frame(Y.train[, ref.cols])
+    X.train.Z <- as.data.frame(Z.train[, ref.cols])
     colnames(X.train.Y) = ref.cols
     colnames(X.train.Z) = ref.cols
-    cond.block <- array(NA, c(nrow(X.ref),Ny + 1,Nz + 1))
-    for(i in seq(nrow(X.un))){
-      cat(paste("Unique mixture estimate:",i,"/",nrow(X.un)), end = "\r")
-
-      x <- as.numeric(X.un[i,])
-
-      weights.y <- weight_vec(x,X.train.Y,ker.set)
-      weights.z <- weight_vec(x,X.train.Z,ker.set)
-      n.eff.y = sum(weights.y)
-      n.eff.z = sum(weights.z)
-      weights.y = weights.y/n.eff.y
-      weights.z = weights.z/n.eff.z
-
-      p.hat.y <- compute_edf(y.tr[,1], Ny, weights.y)
-      p.hat.z <- compute_edf(z.tr[,1], Nz, weights.z)
-
-      if(adaptive.mus){
-        mu.y = mu.y/n.eff.y
-        mu.z = mu.z/n.eff.z
-      } else {
-        mu.y = mu.y
-        mu.z = mu.z
+    cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+    for (i in seq(nrow(X.un))) {
+      if(verbose){
+        cat(paste("Unique mixture estimate:", i, "/", nrow(X.un)),
+            end = "\r")
       }
-      mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y)
-      mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z)
+
+      x <- as.numeric(X.un[i, ])
+      weights.y <- weight_vec(x, X.train.Y, ker.set)
+      weights.z <- weight_vec(x, X.train.Z, ker.set)
+      p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y) # TODO: Could perhaps think of a smarter way to do this
+      p.hat.z <- compute_edf(z.tr[, 1], Nz, weights.z)
+      if(init.latents){
+        # checks which row matches
+        j = which(!colSums(t(latent.set.covariates) != x))
+        init.latent.y = init.latent.set.y[j,]
+        init.latent.z = init.latent.set.z[j,]
+        mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
+                                      mu.y, threshold = threshold, max.iter = max.iter,
+                                      init.latent = init.latent.y)
+        mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
+                                      mu.z, threshold = threshold, max.iter = max.iter,
+                                      init.latent = init.latent.z)
+      } else {
+        mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
+                                      mu.y, threshold = threshold, max.iter = max.iter)
+        mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
+                                      mu.z, threshold = threshold, max.iter = max.iter)
+
+      }
+
       mixture.y <- mix.y$latent
       mixture.z <- mix.z$latent
-
-
-      p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,cond.z,mixture.y,mixture.z)
-
-      # if(sum(abs(rowSums(p.z.cond.y.slice) - 1)) > 0.01){
-      #   break
-      # }
-
-      if(length(ref.cols) > 1){
-        match.idx <- which(apply(X.ref[,ref.cols], 1, function(z) return(all(z == x))))
-      } else {
-        match.idx <- which(X.ref[,ref.cols] == x)
+      p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
+                                                         cond.z,
+                                                         mixture.y,
+                                                         mixture.z,
+                                                         R.bins)
+      if (length(ref.cols) > 1) {
+        match.idx <- which(apply(X.ref[, ref.cols], 1,
+                                 function(z) return(all(z == x))))
       }
-
-
-
-      # for loop and only assigning
-      # is pretty simple and fast
-      for(id in match.idx){
-        cond.block[id,,] <- p.z.cond.y.slice
+      else {
+        match.idx <- which(X.ref[, ref.cols] == x)
       }
-
+      for (id in match.idx) {
+        cond.block[id, , ] <- p.z.cond.y.slice
+      }
     }
-
-    cond.mat <- matrix(NA,nrow(X.ref),Nz + 1)
-    #relatively fast
-    for(j in seq(length(y.ref))){
-      # the offset of the block
-      # when y.ref = 0 strange results occur
-      if(!is.na(y.ref[j])){
-        cond.mat[j,] <- cond.block[j,y.ref[j] + 1,]
-      } else {
-        cond.mat[j,] <- rep(1/(Nz + 1), Nz + 1)
+    cond.mat <- matrix(NA, nrow(X.ref), Nz + 1)
+    for (j in seq(length(y.ref))) {
+      if (!is.na(y.ref[j])) {
+        cond.mat[j, ] <- cond.block[j, y.ref[j] + 1,
+        ]
       }
-
-    }
-
-    # much faster than before
-    Z.imp <- matrix(NA,length(y.ref),n.impute)
-    for(k in 1:length(y.ref)){
-      if(!is.na(y.ref[k])){
-        p.vec <- as.numeric(cond.mat[k,])
-        Z.imp.row <- sample(seq(0,Nz), n.impute, prob = p.vec, replace = T)
-        Z.imp[k,] <- Z.imp.row
-      } else {
-        Z.imp[k,] <- rep(NA,n.impute)
+      else {
+        cond.mat[j, ] <- rep(1/(Nz + 1), Nz + 1)
       }
-
     }
-
-    # placing the true outcomes in the NA
-    # blocks for ease of imputation.
-    na.idx <- which(is.na(Z.imp[,1]))
-    for(i in na.idx){
-      Z.imp[i,] <- z.ref[i]
+    Z.imp <- matrix(NA, length(y.ref), n.impute)
+    for (k in 1:length(y.ref)) {
+      if (!is.na(y.ref[k])) {
+        p.vec <- as.numeric(cond.mat[k, ])
+        Z.imp.row <- sample(seq(0, Nz), n.impute, prob = p.vec,
+                            replace = T)
+        Z.imp[k, ] <- Z.imp.row
+      }
+      else {
+        Z.imp[k, ] <- rep(NA, n.impute)
+      }
+    }
+    na.idx <- which(is.na(Z.imp[, 1]))
+    for (i in na.idx) {
+      Z.imp[i, ] <- z.ref[i]
     }
   }
+  return(Z.imp)
+}
 
 
+#' @export
+#'
+#TODO: Add to R package
+ImputeOutcomesTrueLatent <- function (X.ref, y.ref, z.ref, n.impute, cond.y,cond.z, ref.cols,
+                                      mixture.y.set, mixture.z.set)
+{
+  R.bins.y = ncol(mixture.y.set)
+  R.bins.z = ncol(mixture.z.set)
+  if (length(ref.cols) == 1) {
+    X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
+  }
+  else {
+    X.un <- unique_X(X.ref[, ref.cols])
+  }
+  colnames(X.un) = ref.cols
+  if (length(ref.cols) != length(ker.set)) {
+    stop("ref.cols and ker.set must be the same length")
+  }
+  if (missing(n.impute)) {
+    stop("must indicate number of imputations")
+  }
+  if (missing(cond.y) | missing(cond.y)) {
+    stop("must specify conditional distributions")
+  }
+  Ny <- length(cond.y(0.5)) - 1
+  Nz <- length(cond.z(0.5)) - 1
+  A.matrix.y <- compute_A_matrix_2(R.bins.y, cond.y)
+  A.matrix.z <- compute_A_matrix_2(R.bins.z, cond.z)
+
+  cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+  for (i in seq(nrow(X.un))) {
+    cat(paste("Unique mixture estimate:", i, "/", nrow(X.un)),
+        end = "\r")
+    x <- as.numeric(X.un[i, ])
+    mixture.y <- mixture.y.set[i,]
+    mixture.z <- mixture.z.set[i,]
+    p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
+                                                       cond.z, mixture.y, mixture.z)
+    if (length(ref.cols) > 1) {
+      match.idx <- which(apply(X.ref[, ref.cols], 1,
+                               function(z) return(all(z == x))))
+    }
+    else {
+      match.idx <- which(X.ref[, ref.cols] == x)
+    }
+    for (id in match.idx) {
+      cond.block[id, , ] <- p.z.cond.y.slice
+    }
+  }
+  cond.mat <- matrix(NA, nrow(X.ref), Nz + 1)
+  for (j in seq(length(y.ref))) {
+    if (!is.na(y.ref[j])) {
+      cond.mat[j, ] <- cond.block[j, y.ref[j] + 1,
+      ]
+    }
+    else {
+      cond.mat[j, ] <- rep(1/(Nz + 1), Nz + 1)
+    }
+  }
+  Z.imp <- matrix(NA, length(y.ref), n.impute)
+  for (k in 1:length(y.ref)) {
+    if (!is.na(y.ref[k])) {
+      p.vec <- as.numeric(cond.mat[k, ])
+      Z.imp.row <- sample(seq(0, Nz), n.impute, prob = p.vec,
+                          replace = T)
+      Z.imp[k, ] <- Z.imp.row
+    }
+    else {
+      Z.imp[k, ] <- rep(NA, n.impute)
+    }
+  }
+  na.idx <- which(is.na(Z.imp[, 1]))
+  for (i in na.idx) {
+    Z.imp[i, ] <- z.ref[i]
+  }
   return(Z.imp)
 }
 
 #' @export
 #'
-ImputeOutcomesKnownLatent <- function(X.ref,n.impute,
-                                      cond.y,cond.z,
-                                      true.mix.y, true.mix.z,
-                                      R.bins = 500){
-  # when missing reference columns, we no longer adjust for covariates.
-
-
-
-  Ny <- length(cond.y(.5)) - 1
-  Nz <- length(cond.z(.5)) - 1
-
-  A.matrix.y <- compute_A_matrix_2(R.bins,cond.y)
-  A.tensor.y <- compute_A_tensor_2(R.bins,cond.y)
-
-  A.matrix.z <- compute_A_matrix_2(R.bins,cond.z)
-  A.tensor.z <- compute_A_tensor_2(R.bins,cond.z)
-
-  ## Think about how to generalize this
-  # These should always be the same
-  y.ref <- sim.data$Y
-  z.ref <- sim.data$Z
-
-  #
-  #ref.cols <- colnames(X.ref)
-
-  cond.block <- array(NA, c(nrow(X.ref),Ny + 1,Nz + 1))
-
-  mixture.y <- true.mix.y
-  mixture.z <- true.mix.z
-  #TODO: verify if the conditional imputation model is correct
-  p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,cond.z,mixture.y,mixture.z,nq = 10000)
-  for(id in 1:nrow(X.ref)){
-    cond.block[id,,] <- p.z.cond.y.slice
-  }
-
-  cond.mat <- matrix(NA,nrow(X.ref),Nz + 1)
-  #relatively fast
-  for(j in seq(length(y.ref))){
-    # the offset of the block
-    # when y.ref = 0 strange results occur
-    if(!is.na(y.ref[j])){
-      cond.mat[j,] <- cond.block[j,y.ref[j] + 1,]
-    } else {
-      cond.mat[j,] <- rep(1/(Nz + 1), Nz + 1)
-    }
-
-  }
-
-  # much faster than before
-  Z.imp <- matrix(NA,length(y.ref),n.impute)
-  for(k in 1:length(y.ref)){
-    if(!is.na(y.ref[k])){
-      p.vec <- as.numeric(cond.mat[k,])
-      Z.imp.row <- sample(seq(0,Nz), n.impute, prob = p.vec, replace = T)
-      Z.imp[k,] <- Z.imp.row
-    } else {
-      Z.imp[k,] <- rep(NA,n.impute)
-    }
-
-  }
-
-  # placing the true outcomes in the NA
-  # blocks for ease of imputation.
-  na.idx <- which(is.na(Z.imp[,1]))
-  for(i in na.idx){
-    Z.imp[i,] <- z.ref[i]
-  }
-
-
-
-
-  return(Z.imp)
-}
-
-#' @export
-#'
-conditional_imputation_model_2 <- function(cond.y,cond.z,mixture.y,mixture.z){
-
+conditional_imputation_model_2 <- function (cond.y, cond.z, mixture.y, mixture.z,
+                                            n.quantiles = 10 * max(c(length(mixture.y),length(mixture.z))))
+{
   R.bins <- length(mixture.y)
   A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
   A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
   Ny <- length(cond.y(0.5)) - 1
   Nz <- length(cond.z(0.5)) - 1
-  p.gamma.zeta <- JointDistribution(mixture.y, mixture.z)
+  p.gamma.zeta <- JointDistribution(mixture.y, mixture.z, n.quantiles)
   p.yz <- A.matrix.y %*% p.gamma.zeta %*% t(A.matrix.z)
   p.yz <- p.yz/sum(p.yz)
   p.marg.y <- Matrix::rowSums(p.yz)
   p.z.cond.y <- p.yz/p.marg.y
   p.z.cond.y <- matrix(0, nrow = Ny + 1, ncol = Nz + 1)
   for (k in seq(Ny + 1)) {
-    p.z.cond.y[k, ] <- p.yz[k, ] /p.marg.y[k]
+    p.z.cond.y[k, ] <- p.yz[k, ]/p.marg.y[k]
   }
   return(p.z.cond.y)
 }
@@ -504,32 +480,36 @@ ZScoreMatchDifferences <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
 }
 
 #' @export
-ZScoreConversion <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
-  mu.y <- mean(y.train$y1, na.rm = T)
-  sd.y <- sd(y.train$y1, na.rm = T)
+ZScoreConversion <- function (X.ref, y.train, z.train, Ny = 30, Nz = 30)
+{
+  outcome.cols.y = stringr::str_detect(colnames(y.train),
+                                       "y\\d+") | stringr::str_detect(colnames(y.train),
+                                                                      "y")
+  outcome.cols.z = stringr::str_detect(colnames(z.train),
+                                       "z\\d+") | stringr::str_detect(colnames(z.train),
+                                                                      "z")
+  y.tr <- Y.train[, outcome.cols.y]
+  z.tr <- Z.train[, outcome.cols.z]
 
-  mu.z <- mean(z.train$z1, na.rm = T)
-  sd.z <- sd(z.train$z1, na.rm = T)
-
-
-  #quantile.vec <- rep(NA, Ny + 1)
+  mu.y <- mean(y.tr, na.rm = T)
+  sd.y <- sd(y.tr, na.rm = T)
+  mu.z <- mean(z.tr, na.rm = T)
+  sd.z <- sd(z.tr, na.rm = T)
   conversion.vec <- rep(NA, Ny + 1)
-
-  for(y in seq(0,Ny)){
-    q <- round((sd.z/sd.y)*(y - mu.y) + mu.z)
-    conversion.vec[y + 1] = max(min(q,Nz),0)
+  for (y in seq(0, Ny)) {
+    q <- round((sd.z/sd.y) * (y - mu.y) + mu.z)
+    conversion.vec[y + 1] = max(min(q, Nz), 0)
   }
-
-
-
   y.out <- X.ref$Y
   z.out <- X.ref$Z
   idx.missing <- which(is.na(z.out))
-  z.out[idx.missing] <- conversion.vec[y.out[idx.missing]+ 1]
-
+  z.out[idx.missing] <- conversion.vec[y.out[idx.missing] +
+                                         1]
   X.out <- X.ref
-  return(list("X" = X.out, "Z" = z.out))
+  return(list(X = X.out, Z = z.out))
 }
+
+#TODO: Add the column name agnostic version to the Match Differences Functions
 
 #' @export
 QuantileMatchDifferences <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
@@ -563,21 +543,29 @@ QuantileMatchDifferences <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
 
 
 #' @export
-QuantileConversion <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
+QuantileConversion <- function (X.ref, y.train, z.train, Ny = 30, Nz = 30)
+{
+  outcome.cols.y = stringr::str_detect(colnames(y.train),
+                                       "y\\d+") | stringr::str_detect(colnames(y.train),
+                                                                      "y")
+  outcome.cols.z = stringr::str_detect(colnames(z.train),
+                                       "z\\d+") | stringr::str_detect(colnames(z.train),
+                                                                      "z")
+  y.tr <- y.train[, outcome.cols.y]
+  z.tr <- z.train[, outcome.cols.z]
   conversion.vec <- rep(NA, Ny + 1)
   y.out <- X.ref$Y
   z.out <- X.ref$Z
-  for(y in seq(0,Ny)){
-    p <- mean(y.out <= y, na.rm = T)
-    q <- ceiling(quantile(z.out, p, na.rm = T))
+  for (y in seq(0, Ny)) {
+    p <- mean(y.tr <= y, na.rm = T)
+    q <- ceiling(quantile(z.tr, p, na.rm = T))
     conversion.vec[y + 1] = q
   }
-
   idx.missing <- which(is.na(z.out))
-  z.out[idx.missing] <- conversion.vec[y.out[idx.missing]+ 1]
-
+  z.out[idx.missing] <- conversion.vec[y.out[idx.missing] +
+                                         1]
   X.out <- X.ref
-  return(list("X" = X.out, "Z" = z.out))
+  return(list(X = X.out, Z = z.out))
 }
 
 
@@ -586,119 +574,91 @@ QuantileConversion <- function(X.ref,y.train,z.train, Ny = 30,Nz = 30) {
 # pass on all information to the GLM function
 #' @export
 #'
-ImputationRegressionGLM <- function(formula, X, Z.impute, fit.cc = T, ...){
+ImputationRegressionGLM <- function (formula, X, Z.impute,fit.cc = T, verbose = F, ...)
+{
+  outcome = strsplit(format(formula), split = " ")[[1]][1]
   n.impute <- ncol(Z.impute)
-  if(!("complete" %in% colnames(X))){
+  if (!("complete" %in% colnames(X))) {
     stop("Must indicate which rows have complete data")
   }
-  n.cc <- nrow(X[X$complete == 1,])
-  if(fit.cc){
-    data.full = cbind(as.numeric(Z.impute[,1]),X)
-
-    data.full <- data.full[data.full$complete == 1,]
+  n.cc <- nrow(X[X$complete == 1, ])
+  if (fit.cc) {
+    data.full = cbind(as.numeric(Z.impute[, 1]), X)
+    data.full <- data.full[data.full$complete == 1, ]
     n.cc <- nrow(data.full)
-    colnames(data.full)[1] <- "outcome"
-    naive.fit <- tryCatch(                       # Applying tryCatch
-      expr = {                      # Specifying expression
-        glm(formula, data = data.full, ...)
-        #message("Everything was fine.")
-      },
-
-      error = function(e){          # Specifying error message
-        message("Error in Complete Cases Fit")
-      },
-
-      warning = function(w){        # Specifying warning message
-        message("Warning in Complete Cases Fit")
-      },
-
-      finally = {                   # Specifying final message
-        #message("tryCatch is finished.")
-      }
-    )
-  } else {
-    #warning("No complete cases, cc refers to first imputation")
-    data.full = cbind(as.numeric(Z.impute[,1]),X)
-    if(!("complete" %in% colnames(data.full))){
+    colnames(data.full)[1] <- outcome
+    naive.fit <- tryCatch(expr = {
+      glm(formula, data = data.full, ...)
+    }, error = function(e) {
+      message("Error in Complete Cases Fit")
+    }, warning = function(w) {
+      message("Warning in Complete Cases Fit")
+    }, finally = {
+    })
+  }
+  else {
+    data.full = cbind(as.numeric(Z.impute[, 1]), X)
+    if (!("complete" %in% colnames(data.full))) {
       stop("Must indicate which rows have complete data")
     }
     n.cc <- nrow(data.full)
-    colnames(data.full)[1] <- "outcome"
-    naive.fit <- tryCatch(                       # Applying tryCatch
-      expr = {                      # Specifying expression
-        glm(formula, data = data.full, ...)
-        #message("Everything was fine.")
-      },
-
-      error = function(e){          # Specifying error message
-        message("Error in Complete Cases Fit")
-      },
-
-      warning = function(w){        # Specifying warning message
-        message("Warning in Complete Cases Fit")
-      },
-
-      finally = {                   # Specifying final message
-        #message("tryCatch is finished.")
-      }
-    )
+    colnames(data.full)[1] <- outcome
+    naive.fit <- tryCatch(expr = {
+      glm(formula, data = data.full, ...)
+    }, error = function(e) {
+      message("Error in Complete Cases Fit")
+    }, warning = function(w) {
+      message("Warning in Complete Cases Fit")
+    }, finally = {
+    })
   }
-
-
-
   n.vars <- length(naive.fit$coefficients)
-
-
-
-  Vg <- matrix(0,n.vars,n.vars)
-  impute.betas <- matrix(0,n.vars,n.impute)
-  for(j in 1:n.impute){
-    data.imp = cbind(as.numeric(Z.impute[,j]),X)
-    colnames(data.imp)[1] <- "outcome"
+  Vg <- matrix(0, n.vars, n.vars)
+  impute.betas <- matrix(0, n.vars, n.impute)
+  for (j in 1:n.impute) {
+    data.imp = cbind(as.numeric(Z.impute[, j]), X)
+    colnames(data.imp)[1] <- outcome
     imp.fit <- glm(formula, data = data.imp, ...)
-    #imp.fit <- glm(formula, data = data.imp)
     Vg <- Vg + sandwich::sandwich(imp.fit)
-    impute.betas[,j] <- imp.fit$coefficients
+    impute.betas[, j] <- imp.fit$coefficients
   }
-  # normalize the Rubin Variance
   Vg <- Vg/n.impute
   beta.impute.mean <- rowMeans(impute.betas)
   names(beta.impute.mean) <- names(imp.fit$coefficients)
-
-  Vb <- matrix(0,n.vars,n.vars)
+  Vb <- matrix(0, n.vars, n.vars)
   mean.centered.betas <- impute.betas - beta.impute.mean
-  #colnames(mean.centered.betas) <- names(imp.fit$coefficients)
-
   rownames(mean.centered.betas) <- names(imp.fit$coefficients)
   colnames(Vb) <- names(imp.fit$coefficients)
   rownames(Vb) <- names(imp.fit$coefficients)
   colnames(Vg) <- names(imp.fit$coefficients)
   rownames(Vg) <- names(imp.fit$coefficients)
-  for(j in 1:n.impute){
-    Vb <- Vb + outer(mean.centered.betas[,j], mean.centered.betas[,j], "*")
+  for (j in 1:n.impute) {
+    Vb <- Vb + outer(mean.centered.betas[, j], mean.centered.betas[,
+                                                                   j], "*")
   }
-  Vb <- (1/(n.impute - 1))*Vb
+  Vb <- (1/(n.impute - 1)) * Vb
+  rubin.var <- Vg + (1 + 1/n.impute) * Vb
+  impute.varfrac <- max(diag((((1/n.impute) * Vb)/rubin.var)))
+  if(verbose){
+    print(paste0("Residual Fraction of Variance due to imputation: ",
+                 round(impute.varfrac, 3)))
+  }
 
-  rubin.var <- Vg + (1 + 1/n.impute)*Vb
-  impute.varfrac <- max(diag((((1/n.impute)*Vb)/rubin.var)))
-  print(paste0("Residual Fraction of Variance due to imputation: ", round(impute.varfrac, 3)))
   z.scores <- beta.impute.mean/sqrt(diag(rubin.var))
-  p.vals.imp <- 2*pnorm(-abs(z.scores))
-
-  if(fit.cc){
+  p.vals.imp <- 2 * pnorm(-abs(z.scores))
+  if (fit.cc) {
     cc.var <- sandwich::sandwich(naive.fit)
     cc.beta <- naive.fit$coefficients
     cc.z.scores <- cc.beta/sqrt(diag(cc.var))
-    cc.p.vals <- 2*pnorm(-abs(cc.z.scores))
-  } else {
+    cc.p.vals <- 2 * pnorm(-abs(cc.z.scores))
+  }
+  else {
     cc.var <- NA
     cc.beta <- NA
     cc.z.scores <- NA
     cc.p.vals <- NA
     n.cc <- NA
   }
-
-
   out.list <- list("coefficients" = beta.impute.mean,
                    "variance" = rubin.var,
                    "z-scores" = z.scores,
@@ -712,6 +672,130 @@ ImputationRegressionGLM <- function(formula, X, Z.impute, fit.cc = T, ...){
 
   return(out.list)
 }
+
+#' @export
+#'
+ImputationRegressionGLMBootstrap <- function(formula, X.ref,y.ref,z.ref,n.impute,
+                                             Y.train,Z.train,cond.y,cond.z,
+                                             mu.y,mu.z,ref.cols, ker.set,R.bins = 1000,
+                                             threshold = 5*10**(-5),
+                                             max.iter = 3,
+                                             B.boot = 200, verbose = F){
+
+  # Initialize the good first estimates
+  if (length(ref.cols) == 1) {
+    X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
+  }
+  else {
+    X.un <- unique_X(X.ref[, ref.cols])
+  }
+  colnames(X.un) = ref.cols
+
+  Ny <- length(cond.y(0.5)) - 1
+  Nz <- length(cond.z(0.5)) - 1
+  A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
+  #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
+  A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
+  #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
+  outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
+  outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
+  y.tr <- Y.train[, outcome.cols.y]
+  z.tr <- Z.train[, outcome.cols.z]
+
+  X.train.Y <- as.data.frame(Y.train[, ref.cols])
+  X.train.Z <- as.data.frame(Z.train[, ref.cols])
+  colnames(X.train.Y) = ref.cols
+  colnames(X.train.Z) = ref.cols
+
+  latent.set.covariates = X.un
+  init.latent.set.y = matrix(NA, nrow = nrow(X.un), ncol = R.bins)
+  init.latent.set.z = matrix(NA, nrow = nrow(X.un), ncol = R.bins)
+  for (i in seq(nrow(X.un))) {
+    if(verbose){
+      cat(paste("Unique mixture estimate:", i, "/", nrow(X.un)),
+          end = "\r")
+    }
+
+    x <- as.numeric(X.un[i, ])
+    weights.y <- weight_vec(x, X.train.Y, ker.set)
+    weights.z <- weight_vec(x, X.train.Z, ker.set)
+    p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y) # TODO: Could perhaps think of a smarter way to do this
+    p.hat.z <- compute_edf(z.tr[, 1], Nz, weights.z)
+    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
+                                  mu.y, threshold = threshold)
+    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
+                                  mu.z, threshold = threshold)
+
+
+    mixture.y <- mix.y$latent
+    mixture.z <- mix.z$latent
+
+    init.latent.set.y[i,] = mixture.y
+    init.latent.set.z[i,] = mixture.z
+  }
+
+  idx.y = seq(nrow(Y.train))
+  idx.z = seq(nrow(Z.train))
+  X.frame = X.ref
+  X.frame$complete = 1*!is.na(X.frame$Z)
+
+  coef.boot = NULL
+  var.boot = NULL
+  # TODO: Figure out a way to speed up the computations
+  for(b in seq(B.boot)){
+    boot.idx.y = sample(idx.y, replace = T)
+    boot.idx.z = sample(idx.z, replace = T)
+    Y.train.boot = Y.train[boot.idx.y,]
+    Z.train.boot = Z.train[boot.idx.z,]
+    Z.impute <- ImputeOutcomes(X.ref,y.ref,z.ref,n.impute,
+                               Y.train,Z.train,cond.y,cond.z,
+                               mu.y,mu.z,ref.cols, ker.set,R.bins,
+                               verbose = F, max.iter = max.iter,
+                               init.latents = TRUE,
+                               latent.set.covariates = latent.set.covariates,
+                               init.latent.set.y = init.latent.set.y,
+                               init.latent.set.z = init.latent.set.z)
+
+    res.tmp <- ImputationRegressionGLM(formula, X.frame, Z.impute, fit.cc = F)
+    if(is.null(coef.boot)){
+      coef.boot <- matrix(NA, ncol = length(res.tmp$coefficients), nrow = B.boot)
+      coef.boot[b,] <- res.tmp$coefficients
+    } else {
+      coef.boot[b,] <- res.tmp$coefficients
+    }
+    if(is.null(var.boot)){
+      var.boot <- matrix(NA, ncol = length(res.tmp$variance), nrow = B.boot)
+      var.boot[b,] <- res.tmp$variance
+    } else {
+      var.boot[b,] <- res.tmp$variance
+    }
+
+    if(verbose){
+      m1 = (round(20*b/B.boot))
+      m2 = 20 - m1
+      progress.bar = paste0("|", strrep("=", m1), strrep("-",m2), "|")
+      cat(paste0("Bootstrap:", b, "/",B.boot, "  ", progress.bar), end = "\r")
+    }
+  }
+  beta.est <- colMeans(coef.boot, na.rm = T)
+  #boot.variance <- colMeans((coef.boot - beta.est)^2, na.rm = T)
+
+  total.var.block <- matrix(data = colMeans(var.boot, na.rm = T),
+                            nrow = length(beta.est),
+                            ncol = length(beta.est)) + var(coef.boot, na.rm = T)
+
+  z.scores <- beta.est/sqrt(diag(total.var.block))
+  p.vals.imp <- 2 * pnorm(-abs(z.scores))
+
+  #TODO: recompute Z scores and the variances.
+
+  out.list <- list(coefficients = beta.impute.mean, variance = total.var.block,
+                   `z-scores` = z.scores, `p-values` = p.vals.imp)
+  return(out.list)
+}
+
+
+
 
 #' @export
 fit_to_table <- function(fit){
@@ -905,21 +989,6 @@ BivariateFeasibilityTest <- function(yz.pairs, cond.y, cond.z,
   }
   return(min(p.cons,1))
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
