@@ -11,25 +11,27 @@ QuantileFunction <- function(q,cdf, x = seq(length(cdf))){
 # function for creating latent joint distribution.
 #' @export
 #'
-JointDistribution <- function(gamma, zeta, n.quantiles = 10 * max(c(length(gamma),
-                                                                    length(zeta)))){
+JointDistribution <- function (gamma, zeta, n.quantiles = 10 * max(c(length(gamma),
+                                                                     length(zeta))))
+{
   q.grid = seq(0, n.quantiles)/n.quantiles
   i.set = rep(NA, length(q.grid))
   j.set = rep(NA, length(q.grid))
-  x.set = rep(NA, length(q.grid))
+  x.set = rep(1/(n.quantiles + 1), length(q.grid))
+  cdf.g = cumsum(gamma)
   cdf.g = cdf.g/max(cdf.g)
   cdf.z = cumsum(zeta)
   cdf.z = cdf.z/max(cdf.z)
   R.bins.g = length(gamma)
   R.bins.z = length(zeta)
-
   for (k in seq(length(q.grid))) {
     q = q.grid[k]
     i.set[k] = QuantileFunction(q, cdf.g)
     j.set[k] = QuantileFunction(q, cdf.z)
     x.set[k] = 1/(n.quantiles + 1)
   }
-  p.gz <- Matrix::sparseMatrix(i = i.set, j = j.set, x = x.set, dims = c(R.bins.g,R.bins.z))
+  p.gz <- Matrix::sparseMatrix(i = i.set, j = j.set, x = x.set,
+                               dims = c(R.bins.g, R.bins.z))
   return(p.gz)
 }
 
@@ -80,15 +82,11 @@ unique_X <- function(X){
 #'
 #' @export
 #'
-ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
-                           Y.train,Z.train,cond.y,cond.z,
-                           mu.y,mu.z,ref.cols, ker.set,R.bins = 1000,
-                           threshold = 5*10**(-5), max.iter = 50,
-                           verbose = F, init.latents = NA,
-                           latent.set.covariates = NA,
-                           init.latent.set.y = NA,
-                           init.latent.set.z = NA){
-  # when missing reference columns, we no longer adjust for covariates.
+ImputeOutcomes <- function (X.ref, y.ref, z.ref, n.impute, Y.train, Z.train, cond.y,
+                            cond.z, mu.y, mu.z, ref.cols, ker.set, R.bins = 1000, threshold = 5 *
+                              10^(-5), max.iter = 50, verbose = F, init.latents = F,
+                            latent.set.covariates = NA, init.latent.set.y = NA, init.latent.set.z = NA)
+{
   if (missing(ref.cols) | missing(ker.set)) {
     if (missing(n.impute)) {
       stop("must indicate number of imputations")
@@ -105,20 +103,24 @@ ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
     Ny <- length(cond.y(0.5)) - 1
     Nz <- length(cond.z(0.5)) - 1
     A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
-    #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
     A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
-    #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
-    # columns for the simulations
-    outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
-    outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
+    outcome.cols.y = stringr::str_detect(colnames(Y.train),
+                                         "y\\d+") | stringr::str_detect(colnames(Y.train),
+                                                                        "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train),
+                                         "z\\d+") | stringr::str_detect(colnames(Z.train),
+                                                                        "z")
     y.tr <- Y.train[, outcome.cols.y]
     z.tr <- Z.train[, outcome.cols.z]
     cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
-    cond.block.Boot <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+    cond.block.Boot <- array(NA, c(nrow(X.ref), Ny + 1, Nz +
+                                     1))
     p.hat.y <- compute_edf(y.tr, Ny)
     p.hat.z <- compute_edf(z.tr, Nz)
-    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y, threshold = threshold, max.iter = max.iter)
-    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z, threshold = threshold, max.iter = max.iter)
+    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y,
+                                  threshold = threshold, max.iter = max.iter)
+    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z,
+                                  threshold = threshold, max.iter = max.iter)
     mixture.y <- mix.y$latent
     mixture.z <- mix.z$latent
     p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
@@ -152,7 +154,8 @@ ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
     for (i in na.idx) {
       Z.imp[i, ] <- z.ref[i]
     }
-  } else {
+  }
+  else {
     if (length(ref.cols) == 1) {
       X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
     }
@@ -178,56 +181,52 @@ ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
     Ny <- length(cond.y(0.5)) - 1
     Nz <- length(cond.z(0.5)) - 1
     A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
-    #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
     A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
-    #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
-    outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
-    outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
-    y.tr <- Y.train[, outcome.cols.y]
-    z.tr <- Z.train[, outcome.cols.z]
-
+    outcome.cols.y = stringr::str_detect(colnames(Y.train),
+                                         "y\\d+") | stringr::str_detect(colnames(Y.train),
+                                                                        "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train),
+                                         "z\\d+") | stringr::str_detect(colnames(Z.train),
+                                                                        "z")
+    y.tr <- as.matrix(Y.train[, outcome.cols.y])
+    z.tr <- as.matrix(Z.train[, outcome.cols.z])
     X.train.Y <- as.data.frame(Y.train[, ref.cols])
     X.train.Z <- as.data.frame(Z.train[, ref.cols])
     colnames(X.train.Y) = ref.cols
     colnames(X.train.Z) = ref.cols
     cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
     for (i in seq(nrow(X.un))) {
-      if(verbose){
-        cat(paste("Unique mixture estimate:", i, "/", nrow(X.un)),
-            end = "\r")
+      if (verbose) {
+        cat(paste("Unique mixture estimate:", i, "/",
+                  nrow(X.un)), end = "\r")
       }
-
       x <- as.numeric(X.un[i, ])
       weights.y <- weight_vec(x, X.train.Y, ker.set)
       weights.z <- weight_vec(x, X.train.Z, ker.set)
-      p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y) # TODO: Could perhaps think of a smarter way to do this
+      p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y)
       p.hat.z <- compute_edf(z.tr[, 1], Nz, weights.z)
-      if(init.latents){
-        # checks which row matches
-        j = which(!colSums(t(latent.set.covariates) != x))
-        init.latent.y = init.latent.set.y[j,]
-        init.latent.z = init.latent.set.z[j,]
+      if (init.latents) {
+        j = which(!colSums(t(latent.set.covariates) !=
+                             x))
+        init.latent.y = init.latent.set.y[j, ]
+        init.latent.z = init.latent.set.z[j, ]
         mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
                                       mu.y, threshold = threshold, max.iter = max.iter,
                                       init.latent = init.latent.y)
         mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
                                       mu.z, threshold = threshold, max.iter = max.iter,
                                       init.latent = init.latent.z)
-      } else {
+      }
+      else {
         mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
                                       mu.y, threshold = threshold, max.iter = max.iter)
         mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
                                       mu.z, threshold = threshold, max.iter = max.iter)
-
       }
-
       mixture.y <- mix.y$latent
       mixture.z <- mix.z$latent
       p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
-                                                         cond.z,
-                                                         mixture.y,
-                                                         mixture.z,
-                                                         R.bins)
+                                                         cond.z, mixture.y, mixture.z, R.bins)
       if (length(ref.cols) > 1) {
         match.idx <- which(apply(X.ref[, ref.cols], 1,
                                  function(z) return(all(z == x))))
@@ -675,14 +674,10 @@ ImputationRegressionGLM <- function (formula, X, Z.impute,fit.cc = T, verbose = 
 
 #' @export
 #'
-ImputationRegressionGLMBootstrap <- function(formula, X.ref,y.ref,z.ref,n.impute,
-                                             Y.train,Z.train,cond.y,cond.z,
-                                             mu.y,mu.z,ref.cols, ker.set,R.bins = 1000,
-                                             threshold = 5*10**(-5),
-                                             max.iter = 3,
-                                             B.boot = 200, verbose = F){
-
-  # Initialize the good first estimates
+ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.impute, Y.train, Z.train,
+                                              cond.y, cond.z, mu.y, mu.z, ref.cols, ker.set, R.bins = 1000,
+                                              threshold = 5 * 10^(-5), max.iter = 3, B.boot = 200, verbose = F)
+{
   if (length(ref.cols) == 1) {
     X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
   }
@@ -690,106 +685,92 @@ ImputationRegressionGLMBootstrap <- function(formula, X.ref,y.ref,z.ref,n.impute
     X.un <- unique_X(X.ref[, ref.cols])
   }
   colnames(X.un) = ref.cols
-
   Ny <- length(cond.y(0.5)) - 1
   Nz <- length(cond.z(0.5)) - 1
   A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
-  #A.tensor.y <- compute_A_tensor_2(R.bins, cond.y)
   A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
-  #A.tensor.z <- compute_A_tensor_2(R.bins, cond.z)
-  outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") | stringr::str_detect(colnames(Y.train), "y")
-  outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") | stringr::str_detect(colnames(Z.train), "z")
-  y.tr <- Y.train[, outcome.cols.y]
-  z.tr <- Z.train[, outcome.cols.z]
-
+  outcome.cols.y = stringr::str_detect(colnames(Y.train), "y\\d+") |
+    stringr::str_detect(colnames(Y.train), "y")
+  outcome.cols.z = stringr::str_detect(colnames(Z.train), "z\\d+") |
+    stringr::str_detect(colnames(Z.train), "z")
+  y.tr <- as.matrix(Y.train[, outcome.cols.y])
+  z.tr <- as.matrix(Z.train[, outcome.cols.z])
   X.train.Y <- as.data.frame(Y.train[, ref.cols])
   X.train.Z <- as.data.frame(Z.train[, ref.cols])
   colnames(X.train.Y) = ref.cols
   colnames(X.train.Z) = ref.cols
-
   latent.set.covariates = X.un
   init.latent.set.y = matrix(NA, nrow = nrow(X.un), ncol = R.bins)
   init.latent.set.z = matrix(NA, nrow = nrow(X.un), ncol = R.bins)
   for (i in seq(nrow(X.un))) {
-    if(verbose){
+    if (verbose) {
       cat(paste("Unique mixture estimate:", i, "/", nrow(X.un)),
           end = "\r")
     }
-
     x <- as.numeric(X.un[i, ])
     weights.y <- weight_vec(x, X.train.Y, ker.set)
     weights.z <- weight_vec(x, X.train.Z, ker.set)
-    p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y) # TODO: Could perhaps think of a smarter way to do this
+    p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y)
     p.hat.z <- compute_edf(z.tr[, 1], Nz, weights.z)
-    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
-                                  mu.y, threshold = threshold)
-    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
-                                  mu.z, threshold = threshold)
-
-
+    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y,
+                                  threshold = threshold)
+    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z,
+                                  threshold = threshold)
     mixture.y <- mix.y$latent
     mixture.z <- mix.z$latent
-
-    init.latent.set.y[i,] = mixture.y
-    init.latent.set.z[i,] = mixture.z
+    init.latent.set.y[i, ] = mixture.y
+    init.latent.set.z[i, ] = mixture.z
   }
-
   idx.y = seq(nrow(Y.train))
   idx.z = seq(nrow(Z.train))
   X.frame = X.ref
-  X.frame$complete = 1*!is.na(X.frame$Z)
-
+  X.frame$complete = 1 * !is.na(X.frame$Z)
   coef.boot = NULL
   var.boot = NULL
-  # TODO: Figure out a way to speed up the computations
-  for(b in seq(B.boot)){
+  for (b in seq(B.boot)) {
     boot.idx.y = sample(idx.y, replace = T)
     boot.idx.z = sample(idx.z, replace = T)
-    Y.train.boot = Y.train[boot.idx.y,]
-    Z.train.boot = Z.train[boot.idx.z,]
-    Z.impute <- ImputeOutcomes(X.ref,y.ref,z.ref,n.impute,
-                               Y.train,Z.train,cond.y,cond.z,
-                               mu.y,mu.z,ref.cols, ker.set,R.bins,
-                               verbose = F, max.iter = max.iter,
-                               init.latents = TRUE,
-                               latent.set.covariates = latent.set.covariates,
-                               init.latent.set.y = init.latent.set.y,
-                               init.latent.set.z = init.latent.set.z)
-
-    res.tmp <- ImputationRegressionGLM(formula, X.frame, Z.impute, fit.cc = F)
-    if(is.null(coef.boot)){
-      coef.boot <- matrix(NA, ncol = length(res.tmp$coefficients), nrow = B.boot)
-      coef.boot[b,] <- res.tmp$coefficients
-    } else {
-      coef.boot[b,] <- res.tmp$coefficients
+    Y.train.boot = Y.train[boot.idx.y, ]
+    Z.train.boot = Z.train[boot.idx.z, ]
+    Z.impute <- ImputeOutcomes(X.ref, y.ref, z.ref, n.impute,
+                               Y.train, Z.train, cond.y, cond.z, mu.y, mu.z, ref.cols,
+                               ker.set, R.bins, verbose = F, max.iter = max.iter,
+                               init.latents = TRUE, latent.set.covariates = latent.set.covariates,
+                               init.latent.set.y = init.latent.set.y, init.latent.set.z = init.latent.set.z)
+    res.tmp <- ImputationRegressionGLM(formula, X.frame,
+                                       Z.impute, fit.cc = F)
+    if (is.null(coef.boot)) {
+      coef.boot <- matrix(NA, ncol = length(res.tmp$coefficients),
+                          nrow = B.boot)
+      coef.boot[b, ] <- res.tmp$coefficients
     }
-    if(is.null(var.boot)){
-      var.boot <- matrix(NA, ncol = length(res.tmp$variance), nrow = B.boot)
-      var.boot[b,] <- res.tmp$variance
-    } else {
-      var.boot[b,] <- res.tmp$variance
+    else {
+      coef.boot[b, ] <- res.tmp$coefficients
     }
-
-    if(verbose){
-      m1 = (round(20*b/B.boot))
+    if (is.null(var.boot)) {
+      var.boot <- matrix(NA, ncol = length(res.tmp$variance),
+                         nrow = B.boot)
+      var.boot[b, ] <- res.tmp$variance
+    }
+    else {
+      var.boot[b, ] <- res.tmp$variance
+    }
+    if (verbose) {
+      m1 = (round(20 * b/B.boot))
       m2 = 20 - m1
-      progress.bar = paste0("|", strrep("=", m1), strrep("-",m2), "|")
-      cat(paste0("Bootstrap:", b, "/",B.boot, "  ", progress.bar), end = "\r")
+      progress.bar = paste0("|", strrep("=", m1), strrep("-",
+                                                         m2), "|")
+      cat(paste0("Bootstrap:", b, "/", B.boot, "  ", progress.bar),
+          end = "\r")
     }
   }
   beta.est <- colMeans(coef.boot, na.rm = T)
-  #boot.variance <- colMeans((coef.boot - beta.est)^2, na.rm = T)
-
   total.var.block <- matrix(data = colMeans(var.boot, na.rm = T),
-                            nrow = length(beta.est),
-                            ncol = length(beta.est)) + var(coef.boot, na.rm = T)
-
+                            nrow = length(beta.est), ncol = length(beta.est)) + var(coef.boot,
+                                                                                    na.rm = T)
   z.scores <- beta.est/sqrt(diag(total.var.block))
   p.vals.imp <- 2 * pnorm(-abs(z.scores))
-
-  #TODO: recompute Z scores and the variances.
-
-  out.list <- list(coefficients = beta.impute.mean, variance = total.var.block,
+  out.list <- list(coefficients = beta.est, variance = total.var.block,
                    `z-scores` = z.scores, `p-values` = p.vals.imp)
   return(out.list)
 }

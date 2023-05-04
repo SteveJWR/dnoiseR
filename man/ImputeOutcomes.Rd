@@ -21,7 +21,7 @@ ImputeOutcomes(
   threshold = 5 * 10^(-5),
   max.iter = 50,
   verbose = F,
-  init.latents = NA,
+  init.latents = F,
   latent.set.covariates = NA,
   init.latent.set.y = NA,
   init.latent.set.z = NA
