@@ -11,8 +11,9 @@ QuantileFunction <- function(q,cdf, x = seq(length(cdf))){
 # function for creating latent joint distribution.
 #' @export
 #'
-JointDistribution <- function(gamma,zeta,n.quantiles = 10*max(c(length(gamma), length(zeta)))){
-  q.grid = seq(0,n.quantiles)/n.quantiles
+JointDistribution <- function(gamma, zeta, n.quantiles = 10 * max(c(length(gamma),
+                                                                    length(zeta)))){
+  q.grid = seq(0, n.quantiles)/n.quantiles
   i.set = rep(NA, length(q.grid))
   j.set = rep(NA, length(q.grid))
   x.set = rep(NA, length(q.grid))
@@ -20,15 +21,16 @@ JointDistribution <- function(gamma,zeta,n.quantiles = 10*max(c(length(gamma), l
   cdf.g = cdf.g/max(cdf.g)
   cdf.z = cumsum(zeta)
   cdf.z = cdf.z/max(cdf.z)
-  for(k in seq(length(q.grid))){
+  R.bins.g = length(gamma)
+  R.bins.z = length(zeta)
+
+  for (k in seq(length(q.grid))) {
     q = q.grid[k]
-    i.set[k] = QuantileFunction(q,cdf.g)
-    j.set[k] = QuantileFunction(q,cdf.z)
+    i.set[k] = QuantileFunction(q, cdf.g)
+    j.set[k] = QuantileFunction(q, cdf.z)
     x.set[k] = 1/(n.quantiles + 1)
   }
-  p.gz <- Matrix::sparseMatrix(i = i.set,
-                               j = j.set,
-                               x = x.set)
+  p.gz <- Matrix::sparseMatrix(i = i.set, j = j.set, x = x.set, dims = c(R.bins.g,R.bins.z))
   return(p.gz)
 }
 
@@ -48,7 +50,7 @@ weight_vec <- function(x,X, ker.set){
     w.mat[,i] <- w.tmp
   }
   w.vec <- exp(rowSums(log(w.mat)))
-  w.vec <- nrow(X)*w.vec/sum(w.vec)
+  #w.vec <- nrow(X)*w.vec/sum(w.vec)
   return(w.vec)
 }
 
@@ -214,10 +216,21 @@ ImputeOutcomes <- function(X.ref,y.ref,z.ref,n.impute,
 
       weights.y <- weight_vec(x,X.train.Y,ker.set)
       weights.z <- weight_vec(x,X.train.Z,ker.set)
+      n.eff.y = sum(weights.y)
+      n.eff.z = sum(weights.z)
+      weights.y = weights.y/n.eff.y
+      weights.z = weights.z/n.eff.z
 
       p.hat.y <- compute_edf(y.tr[,1], Ny, weights.y)
       p.hat.z <- compute_edf(z.tr[,1], Nz, weights.z)
 
+      if(adaptive.mus){
+        mu.y = mu.y/n.eff.y
+        mu.z = mu.z/n.eff.z
+      } else {
+        mu.y = mu.y
+        mu.z = mu.z
+      }
       mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y)
       mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z)
       mixture.y <- mix.y$latent

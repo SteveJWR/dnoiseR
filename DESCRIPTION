@@ -14,9 +14,11 @@ Imports:
     CVXR,
     ggplot2,
     Matrix,
+    stringr,
     transport
 Suggests: 
     knitr,
+    multChernoff,
     rmarkdown,
     Rmosek
 VignetteBuilder: knitr

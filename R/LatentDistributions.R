@@ -131,48 +131,57 @@ estimate_mixing_numeric <- function(p.hat, A.matrix, mu = 0, cvx.solver = "SCS")
 #' @param A.matrix  Conditional distribution Matrix
 #' @param mu Regularization Parameter
 #' @param threshold Threshold for the change in the likelihood
-#' @param verbose
+#' @param verbose Whether to display progress
+#' @param max.iter Maximum number of iterations of the EM algorithm
+#' @param init.latent Initialize latent distribution.  This must be
 #'
 #' @return latent trait and observed distribution
 #' @export
 #'
-estimate_mixing_npem <- function(p.hat, A.matrix, mu = 0, threshold = 5*10**(-5),  verbose = F, max.iter = 50){
-    R_bins = ncol(A.matrix)
-    uniform.latent <- rep(1, R_bins)
-    uniform.latent <- uniform.latent/sum(uniform.latent)
+estimate_mixing_npem <- function (p.hat, A.matrix, mu = 0, threshold = 5 * 10^(-5), verbose = F,
+                                  max.iter = 50, init.latent)
+{
+  R_bins = ncol(A.matrix)
+  uniform.latent <- rep(1, R_bins)
+  uniform.latent <- uniform.latent/sum(uniform.latent)
+  if(missing(init.latent)){
     latent.trait.init <- uniform.latent
-    latent.trait <- latent.trait.init
-    p.ma.init <- A.matrix %*% latent.trait.init
-    like.old <- -Inf
-    diff = Inf
-    iter = 1
-    while (abs(diff) > threshold & iter <= max.iter) {
-      p.y.gamma.joint <- t(t(A.matrix) * latent.trait)
-      p.gamma.given.y <- p.y.gamma.joint/rowSums(p.y.gamma.joint)
-      latent.trait.new <- as.numeric(t(p.gamma.given.y) %*%
-                                       p.hat * (1/(1 + mu))) + (mu/(1 + mu)) * uniform.latent
-      latent.trait.new = latent.trait.new/sum(latent.trait.new)
-      p.ma.new = A.matrix %*% latent.trait.new
-      if(mu != 0){
-        like.new <- -kl_divergence(p.hat, p.ma.new) - mu * kl_divergence(uniform.latent,
-                                                                         latent.trait.new)
-      } else {
-        like.new <- -kl_divergence(p.hat, p.ma.new)
-      }
+  } else {
+    latent.trait.init <- init.latent
+  }
 
-      diff = like.new - like.old
-      if (verbose) {
-        if (iter%%10 == 1) {
-          cat(paste0("Likelihood Change: ", diff), end = "\r")
-        }
-      }
-      delta.gamma.vec = latent.trait.new - latent.trait.new
-      latent.trait = latent.trait.new
-      like.old = like.new
-      iter = iter + 1
+  latent.trait <- latent.trait.init
+  p.ma.init <- A.matrix %*% latent.trait.init
+  like.old <- -Inf
+  diff = Inf
+  iter = 1
+  while (abs(diff) > threshold & iter <= max.iter) {
+    p.y.gamma.joint <- t(t(A.matrix) * latent.trait)
+    p.gamma.given.y <- p.y.gamma.joint/rowSums(p.y.gamma.joint)
+    latent.trait.new <- as.numeric(t(p.gamma.given.y) %*%
+                                     p.hat * (1/(1 + mu))) + (mu/(1 + mu)) * uniform.latent
+    latent.trait.new = latent.trait.new/sum(latent.trait.new)
+    p.ma.new = A.matrix %*% latent.trait.new
+    if (mu != 0) {
+      like.new <- -kl_divergence(p.hat, p.ma.new) - mu *
+        kl_divergence(uniform.latent, latent.trait.new)
     }
-    out.list <- list(latent = latent.trait, observed = as.numeric(p.ma.new))
-    return(out.list)
+    else {
+      like.new <- -kl_divergence(p.hat, p.ma.new)
+    }
+    diff = like.new - like.old
+    if (verbose) {
+      if (iter%%10 == 1) {
+        cat(paste0("Likelihood Change: ", diff), end = "\r")
+      }
+    }
+    delta.gamma.vec = latent.trait.new - latent.trait.new
+    latent.trait = latent.trait.new
+    like.old = like.new
+    iter = iter + 1
+  }
+  out.list <- list(latent = latent.trait, observed = as.numeric(p.ma.new))
+  return(out.list)
 }
 
 

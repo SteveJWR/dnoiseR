@@ -18,7 +18,13 @@ ImputeOutcomes(
   ref.cols,
   ker.set,
   R.bins = 1000,
-  threshold = 5 * 10^(-5)
+  threshold = 5 * 10^(-5),
+  max.iter = 50,
+  verbose = F,
+  init.latents = NA,
+  latent.set.covariates = NA,
+  init.latent.set.y = NA,
+  init.latent.set.z = NA
 )
 }
 \arguments{
@@ -47,6 +53,8 @@ ImputeOutcomes(
 \item{ker.set}{Kernels for smoothing over X parameters}
 
 \item{R.bins}{Number of bins for model parameter}
+
+\item{B.boot}{Number of Bootstrap iterations}
 }
 \description{
 Impute Outcomes

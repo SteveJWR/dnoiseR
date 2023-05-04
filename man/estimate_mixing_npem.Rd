@@ -10,7 +10,8 @@ estimate_mixing_npem(
   mu = 0,
   threshold = 5 * 10^(-5),
   verbose = F,
-  max.iter = 50
+  max.iter = 50,
+  init.latent
 )
 }
 \arguments{
@@ -22,7 +23,11 @@ estimate_mixing_npem(
 
 \item{threshold}{Threshold for the change in the likelihood}
 
-\item{verbose}{}
+\item{verbose}{Whether to display progress}
+
+\item{max.iter}{Maximum number of iterations of the EM algorithm}
+
+\item{init.latent}{Initialize latent distribution.  This must be}
 }
 \value{
 latent trait and observed distribution

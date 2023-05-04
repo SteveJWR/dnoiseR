@@ -173,4 +173,11 @@ scale_kernel <- function(ker,scale){
   return(func)
 }
 
+#' @export
+#'
+colSDs <- function(X, ...){
+  mus = colMeans(X, ...)
+  sd.vec = sqrt(colMeans((X - mus)^2, ...))
+  return(sd.vec)
+}
 
