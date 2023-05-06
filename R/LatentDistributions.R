@@ -81,6 +81,66 @@ fit_nonpar_em <- function(p.hat, cond,  R_bins = 300, mu = 0, n.mc.samp = 1000, 
 
 
 
+#' Select Number of Bins
+#'
+#' @param p.hat Distribution to approximate
+#' @param cond Conditional distribution (Empirical Bayes f model)
+#' @param mu Regularization Parameter
+#' @param R.min Minimum number of bins
+#' @param R.max Maximum number of bins
+#' @param threshold Threshold for log-likelihood difference
+#' @param num.steps Number of steps to take for the R (number of bins) selection
+#' @param max.iter Maximum iterations of the NPEM algorithm.
+#'
+#' @return
+#'
+select_R <- function(p.hat, cond, mu = 0.001, R.min = 100, R.max = 5000, threshold = 10**(-4), num.steps = 20, max.iter = 50){
+
+  R.start <- R.min
+  R.seq = round(seq(R.min,R.max, length.out = num.steps))
+  diff <- Inf
+  A.matrix <- compute_A_matrix_2(R.min, cond)
+  lat.list <- estimate_mixing_npem(p.hat,A.matrix, mu = mu, threshold = threshold, max.iter = max.iter)
+  mixture <- lat.list$latent
+  p.ma = A.matrix %*% mixture
+  uniform.latent = rep(1/(R.start), R.start)
+  if (mu != 0) {
+    like.old <- -kl_divergence(p.hat, p.ma) - mu *
+      kl_divergence(uniform.latent, mixture)
+  }
+  else {
+    like.old <- -kl_divergence(p.hat, p.ma)
+  }
+  for(r in seq(2,num.steps)){
+    R.new = R.seq[r]
+    A.matrix <- compute_A_matrix_2(R.new, cond)
+    lat.list <- estimate_mixing_npem(p.hat,A.matrix, mu = mu, threshold = threshold, max.iter = max.iter)
+    mixture <- lat.list$latent
+    p.ma = A.matrix %*% mixture
+    uniform.latent = rep(1/(R.new), R.new)
+
+    if (mu != 0) {
+      like.new <- -kl_divergence(p.hat, p.ma) - mu *
+        kl_divergence(uniform.latent, mixture)
+    }
+    else {
+      like.new <- -kl_divergence(p.hat, p.ma)
+    }
+    diff <- like.new - like.old
+    like.old <- like.new
+    cat(paste("Loglikelihood error differenc:", diff, "Num Bins: ", R.new), end = "\r")
+    if(diff < threshold){
+      break
+    }
+  }
+
+  paste("Selected number of bins:",R.new)
+  return(R.new)
+}
+
+
+
+
 #' CVX implementation
 #'
 #' @param p.hat Discrete empirical distribution function

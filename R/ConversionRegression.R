@@ -732,11 +732,13 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
     boot.idx.z = sample(idx.z, replace = T)
     Y.train.boot = Y.train[boot.idx.y, ]
     Z.train.boot = Z.train[boot.idx.z, ]
+
     Z.impute <- ImputeOutcomes(X.ref, y.ref, z.ref, n.impute,
-                               Y.train, Z.train, cond.y, cond.z, mu.y, mu.z, ref.cols,
+                               Y.train.boot, Z.train.boot, cond.y, cond.z, mu.y, mu.z, ref.cols,
                                ker.set, R.bins, verbose = F, max.iter = max.iter,
                                init.latents = TRUE, latent.set.covariates = latent.set.covariates,
                                init.latent.set.y = init.latent.set.y, init.latent.set.z = init.latent.set.z)
+
     res.tmp <- ImputationRegressionGLM(formula, X.frame,
                                        Z.impute, fit.cc = F)
     if (is.null(coef.boot)) {
