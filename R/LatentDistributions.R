@@ -418,5 +418,55 @@ estimate_mixing_numeric_2 <- function(Y, A.matrix, A.tensor, mu, weights,cvx.sol
 }
 
 
+#' @export
+population_bivariate_likelihood <- function(Y,A.matrix,A.tensor,mixture, weights, mu = 0){
+  if (ncol(Y) != 2) {
+    stop("Y must have 2 columns")
+  }
+  if (any(is.na(Y[, 1]))) {
+    stop("Y cannot have missingness in first column")
+  }
+  if (missing(weights)) {
+    weights <- rep(1, nrow(Y))
+  }
+  if (missing(mu)) {
+    mu = 0
+  }
+  n.obs <- nrow(Y)
+  N <- nrow(A.matrix) - 1
+  R.bins <- ncol(A.matrix)
+  count.vector <- rep(0, N + 1)
+  count.matrix <- matrix(0, N + 1, N + 1)
+  uniform.latent <- rep(1, R.bins)
+  uniform.latent <- uniform.latent/sum(uniform.latent)
+  latent.trait.init <- uniform.latent
+  A.ten.mat <- A.tensor
+  dim(A.ten.mat) <- c((N + 1)^2, R.bins)
+  for (i in seq(nrow(Y))) {
+    if (!any(is.na(Y[i, ]))) {
+      count.matrix[Y[i, 1] + 1, Y[i, 2] + 1] <- count.matrix[Y[i,
+                                                               1] + 1, Y[i, 2] + 1] + weights[i]
+    }
+    else {
+      count.vector[Y[i, 1] + 1] <- count.vector[Y[i, 1] +
+                                                  1] + weights[i]
+    }
+  }
+  count.mat.vec <- count.matrix
+  dim(count.mat.vec) <- (N + 1)^2
+  n.w = sum(weights)
+  n.w1 = sum(count.vector)
+  n.w2 = sum(count.matrix)
+  p.ma1 = as.numeric(A.matrix %*% mixture)
+  p.ma2 = as.numeric(A.ten.mat %*% mixture)
+  uniform = rep(1/R.bins, R.bins)
+  if(mu != 0 ){
+    like <- sum(count.vector * log(p.ma1)) + sum(count.mat.vec * log(p.ma2)) + mu*kl_divergence(uniform,mixture)
+  } else {
+    like <- sum(count.vector * log(p.ma1)) + sum(count.mat.vec * log(p.ma2))
+  }
+  return(like)
+}
+
 
 
