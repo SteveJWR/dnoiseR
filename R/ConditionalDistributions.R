@@ -324,3 +324,111 @@ compute_A_tensor_2 <- function(R.bins, cond){
 
 
 
+#' @export
+#'
+generate_mkm_list <- function(N,ker,h.set){
+  out.list <- list()
+  for(i in 1:length(h.set)){
+    out.list[[i]] <- conditional_mkm(N,ker,h.set[i])
+  }
+  return(out.list)
+}
+
+
+#' @export
+#'
+error_model_selection_bivariate <- function(cond.set, Y, R.bins, cond.names){
+  if(missing(cond.names)){
+    cond.names = NULL
+  }
+  res <- rep(NA, length(cond.set))
+  for(i in seq(length(cond.set))){
+    cat(paste("Model",i,"/",length(cond.set)), end = "\r")
+    cond <- cond.set[[i]]
+    A.matrix <- compute_A_matrix_2(R.bins, cond)
+    A.tensor <- compute_A_tensor_2(R.bins, cond)
+    lat.list <- estimate_mixing_npem_2(Y,A.matrix,A.tensor, mu = 0)
+    mixture <- lat.list$latent
+    res[i] <- population_bivariate_likelihood(Y,A.matrix,A.tensor,mixture, mu = 0)
+  }
+  i.max <- which.max(res)
+  out.list <- list("opt_model" = cond.set[[i.max]], "lik_vals" = res, "opt_model_name" = cond.names[i.max])
+  return(out.list)
+}
+
+#' @export
+#'
+mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
+  res <- rep(NA, length(mu.set))
+  A.matrix <- compute_A_matrix_2(R.bins, cond)
+  N = length(cond(0.5)) - 1
+  n = nrow(Y)
+  idx.folds <- caret::createFolds(seq(n),k = folds)
+  idx = seq(n)
+
+  for(i in seq(length(mu.set))){
+    if(verbose){
+      cat(paste("Model",i,"/",length(mu.set)), end = "\r")
+    }
+
+    mu <- mu.set[[i]]
+    obj <- 0
+    for(k in seq(folds)){
+      val.idx = idx.folds[[k]]
+      Y.val <- Y[val.idx,]
+      train.idx <- setdiff(idx,val.idx)
+      Y.train <- Y[train.idx,]
+      p.hat.train <- compute_edf(Y.train[,1],N)
+      p.hat.val <- compute_edf(Y.val[,1],N)
+      model <- estimate_mixing_npem(p.hat.train,A.matrix, mu = mu)
+      mixture <- as.vector(model$latent)
+      p.ma <- as.numeric(A.matrix %*% mixture)
+      obj <- obj - (1/folds)*kl_divergence(p.hat.val,p.ma)
+    }
+    res[i] <- obj
+  }
+  i.min <- which.min(res)
+  out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res)
+  if(verbose){
+    plot(mu.set,res)
+  }
+  return(out.list)
+}
+
+#' @export
+#'
+mu_selection_2 <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
+  res <- rep(NA, length(mu.set))
+  A.matrix <- compute_A_matrix_2(R.bins, cond)
+  A.tensor <- compute_A_tensor_2(R.bins,cond)
+  N = length(cond(0.5)) - 1
+  n = nrow(Y)
+  idx.folds <- caret::createFolds(seq(n),k = folds)
+  idx = seq(n)
+
+  for(i in seq(length(mu.set))){
+    if(verbose){
+      cat(paste("Model",i,"/",length(mu.set)), end = "\r")
+    }
+
+    mu <- mu.set[[i]]
+    obj <- 0
+    for(k in seq(folds)){
+      val.idx = idx.folds[[k]]
+      Y.val <- Y[val.idx,]
+      train.idx <- setdiff(idx,val.idx)
+      Y.train <- Y[train.idx,]
+
+      model <- estimate_mixing_npem_2(Y.train,A.matrix,A.tensor, mu = mu)
+      mixture <- as.vector(model$latent)
+      obj <- obj + population_bivariate_likelihood(Y.val, A.matrix,A.tensor,mixture, mu = 0)
+    }
+    res[i] <- obj
+  }
+  i.min <- which.min(res)
+  out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res)
+  if(verbose){
+    plot(mu.set,res)
+  }
+  return(out.list)
+}

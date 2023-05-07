@@ -92,7 +92,7 @@ fit_nonpar_em <- function(p.hat, cond,  R_bins = 300, mu = 0, n.mc.samp = 1000, 
 #' @param num.steps Number of steps to take for the R (number of bins) selection
 #' @param max.iter Maximum iterations of the NPEM algorithm.
 #'
-#' @return
+#' @return Smallest viable value of R
 #'
 select_R <- function(p.hat, cond, mu = 0.001, R.min = 100, R.max = 5000, threshold = 10**(-4), num.steps = 20, max.iter = 50){
 
