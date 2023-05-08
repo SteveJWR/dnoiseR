@@ -139,11 +139,11 @@ first_order_feasibility_test <- function(p.ma, p.hat, sample.size){
   # threshold for a very low p.value.
   # numerical errors can occur if the likelihood ratio statistic is too large
   # for values which would correspond to p-values below 10^(-8) we simply use 10^(-8)
-  lr.thresh <- criticalValue(k,sample.size, p = 10^(-8))
+  lr.thresh <- multChernoff::criticalValue(k,sample.size, p = 10^(-8))
   if(lr >= lr.thresh){
     p.feasibility <- 10^(-8)
   } else {
-    p.feasibility <- tailProbBound(x = lr, k = k, n = sample.size)
+    p.feasibility <- multChernoff::tailProbBound(x = lr, k = k, n = sample.size)
     if(p.feasibility > 1){
       p.feasibility <- 1
     }
@@ -157,14 +157,16 @@ first_order_feasibility_test <- function(p.ma, p.hat, sample.size){
 
 #' @export
 #'
-compute_edf_2 <- function(X,N,weights){
+compute_edf_2 <- function (X, N, weights)
+{
   n = nrow(X)
-  if(missing(weights)){
+  if (missing(weights)) {
     weights <- rep(1, n)
-  } else {
+  }
+  else {
     p.hat <- matrix(data = 0, nrow = N + 1, ncol = N + 1)
-    for(i in seq(n)){
-      p.hat[X[i,1],X[i,2]] <- weight[i]
+    for (i in seq(n)) {
+      p.hat[X[i, 1] + 1, X[i, 2] + 1] <- p.hat[X[i, 1] + 1, X[i, 2] + 1] + weights[i]
     }
     p.hat = p.hat/sum(p.hat)
   }
@@ -208,11 +210,11 @@ second_order_feasibility_test <- function(latent.mixture, A.tensor, p.hat, sampl
   # threshold for a very low p.value.
   # numerical errors can occur if the likelihood ratio statistic is too large
   # for values which would correspond to p-values below 10^(-8) we simply use 10^(-8)
-  lr.thresh <- criticalValue(k,sample.size, p = 10^(-8))
+  lr.thresh <- multChernoff::criticalValue(k,sample.size, p = 10^(-8))
   if(lr >= lr.thresh){
     p.feasibility <- 10^(-8)
   } else {
-    p.feasibility <- tailProbBound(x = lr, k = k, n = sample.size)
+    p.feasibility <- multChernoff::tailProbBound(x = lr, k = k, n = sample.size)
     if(p.feasibility > 1){
       p.feasibility <- 1
     }
