@@ -235,7 +235,7 @@ generate_cond_binomial <- function(N){
 #' @return Conditional Distribution Matric Form
 #' @export
 #'
-compute_A_matrix <- function(R_bins, cond, numeric.points = 100, verbose = F){
+compute_A_matrix <- function(R_bins, cond, numeric.points = 3, verbose = F){
   N <- length(cond(0.5)) - 1
   A_matrix <- matrix(data = NA, nrow = N + 1, ncol = R_bins)
   for(i in 1:R_bins){
@@ -267,7 +267,7 @@ compute_A_matrix <- function(R_bins, cond, numeric.points = 100, verbose = F){
 
 #' @export
 #'
-compute_A_tensor <- function(R_bins, cond, numeric.points = 100, verbose = F){
+compute_A_tensor <- function(R_bins, cond, numeric.points = 3, verbose = F){
   # 3d Array for faster computation.
   N <- length(cond(0.5)) - 1
   A_3D <- array(NA, dim = c(N+1,N+1,R_bins))

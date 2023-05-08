@@ -4,7 +4,7 @@
 \alias{compute_A_matrix}
 \title{Compute conditional distribution matrix}
 \usage{
-compute_A_matrix(R_bins, cond, numeric.points = 100, verbose = F)
+compute_A_matrix(R_bins, cond, numeric.points = 3, verbose = F)
 }
 \arguments{
 \item{R_bins}{The number of latent bins to choose}

@@ -121,15 +121,17 @@ mu_selection_2 <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
 ##   Feasibility tests ---------
 
 # Function: computes the first order feasibility test
-# Input: latent.mixture, a vector of weights for the latent distribution; numeric
-#        A.matrix, matrix which maps a vector of uniform bins to the observed data; matrix
-#        p.hat, a discrete empirical distribution function;  must be an vector of numeric values
-# Output: p.feasibility: p value for the feasibility test, is at minimum e-8 due to numerical rounding issues
 
-test_feasibility_first_order <- function(latent.mixture, A.matrix, p.hat, sample.size){
-  # model implied distribution on Y
-  p.ma <- A.matrix %*% latent.mixture
-  p.ma <- as.numeric(p.ma)
+#' First order feasibility test
+#'
+#' @param p.ma Nonparametric Maximum Likelihood Marginal Distribution
+#' @param p.hat Empirical Distribution
+#' @param sample.size Sample size
+#'
+#' @return p value for first order feasibility test
+#' @export
+#'
+first_order_feasibility_test <- function(latent.mixture, A.matrix, p.hat, sample.size){
   # likelihood ratio statistic
   lr <- 2*sample.size*kl_divergence(p.hat, p.ma)
   k <- length(p.hat)
@@ -153,24 +155,49 @@ test_feasibility_first_order <- function(latent.mixture, A.matrix, p.hat, sample
   return(p.feasibility)
 }
 
+#' @export
+#'
+compute_edf_2 <- function(X,N,weights){
+  n = nrow(X)
+  if(missing(weights)){
+    weights <- rep(1, n)
+  } else {
+    p.hat <- matrix(data = 0, nrow = N + 1, ncol = N + 1)
+    for(i in seq(n)){
+      p.hat[X[i,1],X[i,2]] <- weight[i]
+    }
+    p.hat = p.hat/sum(p.hat)
+  }
+  return(p.hat)
+}
 
-# Function: computes the second order feasibility test
-# Input: latent.mixture, a vector of weights for the latent distribution; numeric
-#        A.two.sample.tensor, tensor which maps a vector of uniform bins to the bivariate observed data distribution; 3D tensor
-#        p.hat, a discrete empirical distribution function;  must be an vector of numeric values
-# Output: p.feasibility: p value for the feasibility test, is at minimum e-8 due to numerical rounding issues
 
-test_feasibility_second_order <- function(latent.mixture, A.two.sample.tensor, p.hat, sample.size){
+function(x,N, weights){
+
+  return(p.hat)
+}
+
+#' Second Order Feasibility Test
+#'
+#' @param latent.mixture Latent Distribution
+#' @param A.tensor Conditional distribution tensor
+#' @param p.hat Empirical Distribution
+#' @param sample.size Sample Size
+#'
+#' @return p value for second order feasibility test
+#' @export
+#'
+second_order_feasibility_test <- function(latent.mixture, A.tensor, p.hat, sample.size){
   # model implied distribution on Y
-  R_bins <- length(latent.mixture)
-  p.ma.list <- lapply(1:R_bins, function(z){
-    out <- A.two.sample.tensor[,,z]*latent.mixture[z]
+  R.bins <- length(latent.mixture)
+  p.ma.list <- lapply(1:R.bins, function(z){
+    out <- A.tensor[,,z]*latent.mixture[z]
     return(out)
   })
-  p.ma <- matrix(data = 0, nrow = nrow(A.two.sample.tensor[,,1]),
-                 ncol = ncol(A.two.sample.tensor[,,1]))
+  p.ma <- matrix(data = 0, nrow = nrow(A.tensor[,,1]),
+                 ncol = ncol(A.tensor[,,1]))
 
-  for(i in 1:R_bins){
+  for(i in 1:R.bins){
     p.ma <- p.ma + p.ma.list[[i]]
   }
 
@@ -219,14 +246,14 @@ second_score_conditional <- function(y.obs, latent.mixture, cond){
   # corresponding quantiles to the latent mixture
   latent.quantiles <- seq(0,1, length.out = length(tau))
 
-  R_bins <- length(latent.mixture)
-  latent.points <- sapply(1:R_bins, function(z){
+  R.bins <- length(latent.mixture)
+  latent.points <- sapply(1:R.bins, function(z){
     gam <- (latent.quantiles[z] + latent.quantiles[z+1])/2
     return(gam)
   })
 
 
-  joint.dist.grid  <- sapply(1:R_bins, function(gam.idx){
+  joint.dist.grid  <- sapply(1:R.bins, function(gam.idx){
     gam <- latent.points[gam.idx]
     weight <- latent.mixture[gam.idx]
 
@@ -244,16 +271,16 @@ second_score_conditional <- function(y.obs, latent.mixture, cond){
 
 # Function: Compute the likelihood of a mixing distributions based on two sequential observations for a constant gamma value
 # Input: y.paired, a data.frame of the pairs of observed scores
-#        A.two.sample.tensor, a tensor which is used to map the latent gamma to the joint bivariate distribution of scores
+#        A.tensor, a tensor which is used to map the latent gamma to the joint bivariate distribution of scores
 #        latent.mixture.list,  a list of latent mixtures to use for each pair of observations.
 # Output: log-likelihood value
 
 
-compute_two_obs_loglikelihood <- function(y.paired, A.two.sample.tensor, latent.mixture.list){
+compute_two_obs_loglikelihood <- function(y.paired, A.tensor, latent.mixture.list){
   M <- nrow(y.paired)
   log.likelihood <- 0
   for(m in 1:M){
-    pair.prob <- t(A.two.sample.tensor[y.paired[m,1] +1,y.paired[m,2] + 1,]) %*% latent.mixture.list[[m]]
+    pair.prob <- t(A.tensor[y.paired[m,1] +1,y.paired[m,2] + 1,]) %*% latent.mixture.list[[m]]
     log.likelihood <- log.likelihood + as.numeric(log(pair.prob))
   }
   return(log.likelihood)
