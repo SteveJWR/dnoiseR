@@ -270,7 +270,7 @@ estimate_mixing_npem_2 <- function(Y, A.matrix, A.tensor, weights, mu = 0, thres
 
 
   #
-  uniform.latent <- rep(1,R_bins)
+  uniform.latent <- rep(1,R.bins)
   uniform.latent <- uniform.latent/sum(uniform.latent)
 
   latent.trait.init <- uniform.latent

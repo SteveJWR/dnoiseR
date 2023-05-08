@@ -337,13 +337,15 @@ generate_mkm_list <- function(N,ker,h.set){
 
 #' @export
 #'
-error_model_selection_bivariate <- function(cond.set, Y, R.bins, cond.names){
+error_model_selection_bivariate <- function(cond.set, Y, R.bins, cond.names, verbose = F){
   if(missing(cond.names)){
     cond.names = NULL
   }
   res <- rep(NA, length(cond.set))
   for(i in seq(length(cond.set))){
-    cat(paste("Model",i,"/",length(cond.set)), end = "\r")
+    if(verbose){
+      cat(paste("Model",i,"/",length(cond.set)), end = "\r")
+    }
     cond <- cond.set[[i]]
     A.matrix <- compute_A_matrix_2(R.bins, cond)
     A.tensor <- compute_A_tensor_2(R.bins, cond)
