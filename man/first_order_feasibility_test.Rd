@@ -4,14 +4,14 @@
 \alias{first_order_feasibility_test}
 \title{First order feasibility test}
 \usage{
-first_order_feasibility_test(latent.mixture, A.matrix, p.hat, sample.size)
+first_order_feasibility_test(p.ma, p.hat, sample.size)
 }
 \arguments{
+\item{p.ma}{Nonparametric Maximum Likelihood Marginal Distribution}
+
 \item{p.hat}{Empirical Distribution}
 
 \item{sample.size}{Sample size}
-
-\item{p.ma}{Nonparametric Maximum Likelihood Marginal Distribution}
 }
 \value{
 p value for first order feasibility test

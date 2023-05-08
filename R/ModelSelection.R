@@ -131,7 +131,7 @@ mu_selection_2 <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
 #' @return p value for first order feasibility test
 #' @export
 #'
-first_order_feasibility_test <- function(latent.mixture, A.matrix, p.hat, sample.size){
+first_order_feasibility_test <- function(p.ma, p.hat, sample.size){
   # likelihood ratio statistic
   lr <- 2*sample.size*kl_divergence(p.hat, p.ma)
   k <- length(p.hat)
