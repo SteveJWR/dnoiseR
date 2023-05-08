@@ -52,56 +52,56 @@ generate_cond_binomial <- function(N){
 #        cond, function defining the conditional distribution of Y|gamma; function [0,1] -> {0, ..., N}
 # Output: a vector of samples from gamma|Y
 
-sample_latent_conditional <- function(y.obs, n.mc.samp, tau, latent.trait.quantiles, cond){
-
-  N <- length(cond(0.5)) - 1
-
-  # approximate the observed frequencies
-  p.ma <- compute_p_ma(tau,
-                       latent.trait.quantiles,
-                       cond)
-
-  p.approx <- p.ma[y.obs + 1] # probability of conditional distribution
-
-  # approximate number of times required to sample
-  n.parallel <- round(2*n.mc.samp/p.approx)
-
-  # number of bins
-  n.bins <- length(tau) - 1
-  weights <- c()
-  for(i in 1:n.bins){
-    weights[i] <- tau[i + 1] - tau[i]
-  }
-  if(n.parallel >= 500000){
-    n.parallel <- 500000
-  }
-  # outcome
-  out <- c()
-  while (length(out) < n.mc.samp){
-
-    # sampling from the binned latent distribution
-    latent.idx <- sample(1:n.bins, size = n.parallel, replace = TRUE, prob = weights)
-    low.bounds <- latent.trait.quantiles[latent.idx]
-    high.bounds <- latent.trait.quantiles[latent.idx + 1]
-    latent.sample <- runif(n.parallel, min = low.bounds, max = high.bounds)
-
-    y.model.samp <- sapply(latent.sample, function(x){
-      i = 0:N
-      assumption.weights <- cond(x)
-      out <- sample(0:N, size = 1, replace = TRUE, prob = assumption.weights)
-      return(out)
-    })
-
-    # keeping the latent variables which generated the observed score
-    keep.latent.idx <- (y.model.samp == y.obs)
-
-    out <- c(out, latent.sample[keep.latent.idx])
-  }
-  # returning only the first exact number of samples
-  out <- out[1:n.mc.samp]
-  return(out)
-
-}
+# sample_latent_conditional <- function(y.obs, n.mc.samp, tau, latent.trait.quantiles, cond){
+#
+#   N <- length(cond(0.5)) - 1
+#
+#   # approximate the observed frequencies
+#   p.ma <- compute_p_ma(tau,
+#                        latent.trait.quantiles,
+#                        cond)
+#
+#   p.approx <- p.ma[y.obs + 1] # probability of conditional distribution
+#
+#   # approximate number of times required to sample
+#   n.parallel <- round(2*n.mc.samp/p.approx)
+#
+#   # number of bins
+#   n.bins <- length(tau) - 1
+#   weights <- c()
+#   for(i in 1:n.bins){
+#     weights[i] <- tau[i + 1] - tau[i]
+#   }
+#   if(n.parallel >= 500000){
+#     n.parallel <- 500000
+#   }
+#   # outcome
+#   out <- c()
+#   while (length(out) < n.mc.samp){
+#
+#     # sampling from the binned latent distribution
+#     latent.idx <- sample(1:n.bins, size = n.parallel, replace = TRUE, prob = weights)
+#     low.bounds <- latent.trait.quantiles[latent.idx]
+#     high.bounds <- latent.trait.quantiles[latent.idx + 1]
+#     latent.sample <- runif(n.parallel, min = low.bounds, max = high.bounds)
+#
+#     y.model.samp <- sapply(latent.sample, function(x){
+#       i = 0:N
+#       assumption.weights <- cond(x)
+#       out <- sample(0:N, size = 1, replace = TRUE, prob = assumption.weights)
+#       return(out)
+#     })
+#
+#     # keeping the latent variables which generated the observed score
+#     keep.latent.idx <- (y.model.samp == y.obs)
+#
+#     out <- c(out, latent.sample[keep.latent.idx])
+#   }
+#   # returning only the first exact number of samples
+#   out <- out[1:n.mc.samp]
+#   return(out)
+#
+# }
 
 
 # Function: sample from the next EM step for updating the latent distribution.
@@ -181,38 +181,38 @@ sample_latent_conditional <- function(y.obs, n.mc.samp, tau, latent.trait.quanti
 
 
 
-compute_loglikelihood_from_latent <- function(p.hat, p.ma, tau,
-                                              latent.trait.quantiles,
-                                              mu = 0){
-
-  R_bins <- length(tau) - 1
-
-  heights <- c()
-  for(i in 1:R_bins){
-    heights[i] <- (tau[i + 1] - tau[i])/(latent.trait.quantiles[i + 1] - latent.trait.quantiles[i])
-  }
-
-  widths <- c()
-  for(i in 1:R_bins){
-    widths[i] <- latent.trait.quantiles[i + 1] - latent.trait.quantiles[i]
-  }
-
-  if(mu > 0){
-    reg.term <- mu*sum(log(heights)*widths)
-  } else {
-    reg.term <- 0
-  }
-
-
-  data.term.vec <- p.hat*log(p.ma)
-  # defining nan (0*log(0)) values as 0
-  data.term.vec[is.nan(data.term.vec)] <- 0
-
-  out <- sum(data.term.vec) + reg.term
-
-  return(out)
-
-}
+# compute_loglikelihood_from_latent <- function(p.hat, p.ma, tau,
+#                                               latent.trait.quantiles,
+#                                               mu = 0){
+#
+#   R_bins <- length(tau) - 1
+#
+#   heights <- c()
+#   for(i in 1:R_bins){
+#     heights[i] <- (tau[i + 1] - tau[i])/(latent.trait.quantiles[i + 1] - latent.trait.quantiles[i])
+#   }
+#
+#   widths <- c()
+#   for(i in 1:R_bins){
+#     widths[i] <- latent.trait.quantiles[i + 1] - latent.trait.quantiles[i]
+#   }
+#
+#   if(mu > 0){
+#     reg.term <- mu*sum(log(heights)*widths)
+#   } else {
+#     reg.term <- 0
+#   }
+#
+#
+#   data.term.vec <- p.hat*log(p.ma)
+#   # defining nan (0*log(0)) values as 0
+#   data.term.vec[is.nan(data.term.vec)] <- 0
+#
+#   out <- sum(data.term.vec) + reg.term
+#
+#   return(out)
+#
+# }
 
 
 
@@ -264,6 +264,7 @@ compute_A_matrix <- function(R_bins, cond, numeric.points = 100, verbose = F){
 #        numeric.points,  number of points used in the numeric approximation of A
 # Output: latent: weights in each bin in the latent distribution
 #         observed: list of probabilities assigned to each test score value
+
 #' @export
 #'
 compute_A_tensor <- function(R_bins, cond, numeric.points = 100, verbose = F){
@@ -321,7 +322,6 @@ compute_A_tensor_2 <- function(R.bins, cond){
   }, FUN.VALUE = array(0,c(N + 1,N + 1)))
   return(A.out)
 }
-
 
 
 #' @export
