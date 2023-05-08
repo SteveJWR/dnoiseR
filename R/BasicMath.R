@@ -89,9 +89,6 @@ compute_edf <- function(x,N, weights){
 
 
 
-
-# all of these are simple functions which can be used to define a kernel function
-
 #' @export
 #'
 gaussian_kernel <- function(x){
