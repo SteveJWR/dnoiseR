@@ -1,5 +1,11 @@
 
-
+#' Generate List of Measurement Kernel Models
+#'
+#' @param N Number of questions
+#' @param ker Kernel function
+#' @param h.set Vector of bandwidths
+#'
+#' @return List of kernel functions
 #' @export
 #'
 generate_mkm_list <- function(N,ker,h.set){
