@@ -135,31 +135,13 @@ first_order_feasibility_test <- function (p.ma, p.hat, sample.size)
 {
   lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
   k <- length(p.hat)
-  lr.thresh <- multChernoff::criticalValue(k, sample.size,
-                                           p = 10^(-8))
-  if (lr >= lr.thresh) {
-    p.feasibility <- 10^(-8)
+
+  p.feasibility <- tailProbBound2(x = lr,k = k, n = sample.size)
+  if (p.feasibility > 1) {
+    p.feasibility <- 1
   }
-  tryCatch(p.feasibility <- multChernoff::tailProbBound(x = lr,
-                                                        k = k, n = sample.size))
-  if(is.nan(p.feasibility)){
-    lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
-    k <- nrow(p.hat) * ncol(p.hat)
-    lr.thresh <- multChernoff::criticalValue(k, sample.size,
-                                             p = 10**(-8), verbose = T)
-    if (lr >= lr.thresh) {
-      p.feasibility <- 10^(-8)
-    }
-    else {
-      p.feasibility <- multChernoff::tailProbBound(x = lr,
-                                                   k = k, n = sample.size)
-      if (p.feasibility > 1) {
-        p.feasibility <- 1
-      }
-      if (p.feasibility < 0) {
-        p.feasibility <- 0
-      }
-    }
+  if (p.feasibility < 0) {
+    p.feasibility <- 0
   }
   return(p.feasibility)
 }
@@ -222,31 +204,27 @@ second_order_feasibility_test <- function(latent.mixture, A.tensor, p.hat, sampl
   # threshold for a very low p.value.
   # numerical errors can occur if the likelihood ratio statistic is too large
   # for values which would correspond to p-values below 10^(-8) we simply use 10^(-8)
-  tryCatch(p.feasibility <- multChernoff::tailProbBound(x = lr,
-                                                        k = k, n = sample.size))
-  if(is.nan(p.feasibility)){
-    lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
-    k <- nrow(p.hat) * ncol(p.hat)
-    lr.thresh <- multChernoff::criticalValue(k, sample.size,
-                                             p = 10**(-8), verbose = T)
-    if (lr >= lr.thresh) {
-      p.feasibility <- 10^(-8)
-    }
-    else {
-      p.feasibility <- multChernoff::tailProbBound(x = lr,
-                                                   k = k, n = sample.size)
-      if (p.feasibility > 1) {
-        p.feasibility <- 1
-      }
-      if (p.feasibility < 0) {
-        p.feasibility <- 0
-      }
-    }
+  p.feasibility <- tailProbBound2(x = lr,k = k, n = sample.size)
+  if (p.feasibility > 1) {
+    p.feasibility <- 1
+  }
+  if (p.feasibility < 0) {
+    p.feasibility <- 0
   }
   return(p.feasibility)
 }
 
-
+# numerically more stable version.
+#' @export
+#'
+tailProbBound2 <- function(x,k,n, grid.size = 1000){
+  f <- function(lambda) {
+    lambda <- pmin(pmax(lambda, 0), 1)
+    - lambda * x / 2 + log(multChernoff::mgfBound(k, n, lambda))
+  }
+  lambda.vec <- seq(0, 1, length.out = grid.size)
+  return(min(exp(min(f(lambda.vec))),1))
+}
 
 
 ##   Model Selection Functions ----------------------------------------
