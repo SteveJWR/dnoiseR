@@ -163,16 +163,14 @@ compute_edf_2 <- function (X, N, weights)
   if (missing(weights)) {
     weights <- rep(1, n)
   }
-  else {
-    p.hat <- matrix(data = 0, nrow = N + 1, ncol = N + 1)
-    for (i in seq(n)) {
-      p.hat[X[i, 1] + 1, X[i, 2] + 1] <- p.hat[X[i, 1] + 1, X[i, 2] + 1] + weights[i]
-    }
-    p.hat = p.hat/sum(p.hat)
+  p.hat <- matrix(data = 0, nrow = N + 1, ncol = N + 1)
+  for (i in seq(n)) {
+    p.hat[X[i, 1] + 1, X[i, 2] + 1] <- p.hat[X[i, 1] +
+                                               1, X[i, 2] + 1] + weights[i]
   }
+  p.hat = p.hat/sum(p.hat)
   return(p.hat)
 }
-
 
 function(x,N, weights){
 

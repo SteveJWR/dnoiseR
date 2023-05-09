@@ -13,6 +13,7 @@ sample_bivariate <- function(n,p.mat){
   return(Y)
 }
 
+#TODO: get rid of the redundant one
 #' Simulate test outcomes
 #' @export
 #'
