@@ -131,29 +131,43 @@ mu_selection_2 <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
 #' @return p value for first order feasibility test
 #' @export
 #'
-first_order_feasibility_test <- function(p.ma, p.hat, sample.size){
-  # likelihood ratio statistic
-  lr <- 2*sample.size*kl_divergence(p.hat, p.ma)
+first_order_feasibility_test <- function (p.ma, p.hat, sample.size)
+{
+  lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
   k <- length(p.hat)
-
-  # threshold for a very low p.value.
-  # numerical errors can occur if the likelihood ratio statistic is too large
-  # for values which would correspond to p-values below 10^(-8) we simply use 10^(-8)
-  lr.thresh <- multChernoff::criticalValue(k,sample.size, p = 10^(-8))
-  if(lr >= lr.thresh){
+  lr.thresh <- multChernoff::criticalValue(k, sample.size,
+                                           p = 10^(-8))
+  if (lr >= lr.thresh) {
     p.feasibility <- 10^(-8)
-  } else {
-    p.feasibility <- multChernoff::tailProbBound(x = lr, k = k, n = sample.size)
-    if(p.feasibility > 1){
-      p.feasibility <- 1
+  }
+  tryCatch(p.feasibility <- multChernoff::tailProbBound(x = lr,
+                                                        k = k, n = sample.size))
+  if(is.nan(p.feasibility)){
+    lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
+    k <- nrow(p.hat) * ncol(p.hat)
+    lr.thresh <- multChernoff::criticalValue(k, sample.size,
+                                             p = 10**(-8), verbose = T)
+    if (lr >= lr.thresh) {
+      p.feasibility <- 10^(-8)
     }
-    # handling rounding errors
-    if(p.feasibility < 0){
-      p.feasibility <- 0
+    else {
+      p.feasibility <- multChernoff::tailProbBound(x = lr,
+                                                   k = k, n = sample.size)
+      if (p.feasibility > 1) {
+        p.feasibility <- 1
+      }
+      if (p.feasibility < 0) {
+        p.feasibility <- 0
+      }
     }
   }
   return(p.feasibility)
 }
+
+
+
+
+
 
 #' @export
 #'
@@ -208,22 +222,29 @@ second_order_feasibility_test <- function(latent.mixture, A.tensor, p.hat, sampl
   # threshold for a very low p.value.
   # numerical errors can occur if the likelihood ratio statistic is too large
   # for values which would correspond to p-values below 10^(-8) we simply use 10^(-8)
-  lr.thresh <- multChernoff::criticalValue(k,sample.size, p = 10^(-8))
-  if(lr >= lr.thresh){
-    p.feasibility <- 10^(-8)
-  } else {
-    p.feasibility <- multChernoff::tailProbBound(x = lr, k = k, n = sample.size)
-    if(p.feasibility > 1){
-      p.feasibility <- 1
+  tryCatch(p.feasibility <- multChernoff::tailProbBound(x = lr,
+                                                        k = k, n = sample.size))
+  if(is.nan(p.feasibility)){
+    lr <- 2 * sample.size * kl_divergence(p.hat, p.ma)
+    k <- nrow(p.hat) * ncol(p.hat)
+    lr.thresh <- multChernoff::criticalValue(k, sample.size,
+                                             p = 10**(-8), verbose = T)
+    if (lr >= lr.thresh) {
+      p.feasibility <- 10^(-8)
     }
-    # handling rounding errors
-    if(p.feasibility < 0){
-      p.feasibility <- 0
+    else {
+      p.feasibility <- multChernoff::tailProbBound(x = lr,
+                                                   k = k, n = sample.size)
+      if (p.feasibility > 1) {
+        p.feasibility <- 1
+      }
+      if (p.feasibility < 0) {
+        p.feasibility <- 0
+      }
     }
   }
   return(p.feasibility)
 }
-
 
 
 
