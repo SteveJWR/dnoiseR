@@ -347,6 +347,215 @@ ImputeOutcomesTrueLatent <- function (X.ref, y.ref, z.ref, n.impute, cond.y,cond
   return(Z.imp)
 }
 
+
+#TODO: Can we port this in to the Impute function for consistency of versions
+#' Predict Distributions
+#'
+#' @param X.ref Covariates Reference
+#' @param y.ref Observed Data Reference (to convert)
+#' @param Y.train Training data
+#' @param Z.train Testing data
+#' @param cond.y Conditional distribution 1
+#' @param cond.z Conditional distribution 2
+#' @param mu.y Tuning parameter 1
+#' @param mu.z Tuning parameter 2
+#' @param ref.cols reference columns
+#' @param ker.set Kernels for smoothing over X parameters
+#' @param R.bins Number of bins for model parameter
+#' @param threshold Threshold for NPEM Iterations
+#' @param max.iter Maximum number of iterations in the NPEM algorithm
+#' @param verbose Print fitting details
+#'
+#' @export
+#'
+predictedDistributions <- function (X.ref, y.ref,  Y.train, Z.train, cond.y,
+                                    cond.z, mu.y, mu.z, ref.cols, ker.set, R.bins = 1000, threshold = 5 *
+                                      10^(-5), max.iter = 50, verbose = F)
+{
+  if (missing(ref.cols) | missing(ker.set)) {
+    if (missing(cond.y) | missing(cond.y)) {
+      stop("must specify conditional distributions")
+    }
+    if (missing(mu.y) | missing(mu.z)) {
+      stop("must specify regularization parameters")
+    }
+    if (missing(Y.train) | missing(Z.train)) {
+      stop("must specify training data")
+    }
+    Ny <- length(cond.y(0.5)) - 1
+    Nz <- length(cond.z(0.5)) - 1
+    A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
+    A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
+    outcome.cols.y = stringr::str_detect(colnames(Y.train),
+                                         "y\\d+") | stringr::str_detect(colnames(Y.train),
+                                                                        "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train),
+                                         "z\\d+") | stringr::str_detect(colnames(Z.train),
+                                                                        "z")
+    y.tr <- Y.train[, outcome.cols.y]
+    z.tr <- Z.train[, outcome.cols.z]
+    cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+    cond.block.Boot <- array(NA, c(nrow(X.ref), Ny + 1, Nz +
+                                     1))
+    p.hat.y <- compute_edf(y.tr, Ny)
+    p.hat.z <- compute_edf(z.tr, Nz)
+    mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y, mu.y,
+                                  threshold = threshold, max.iter = max.iter)
+    mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z, mu.z,
+                                  threshold = threshold, max.iter = max.iter)
+    mixture.y <- mix.y$latent
+    mixture.z <- mix.z$latent
+    p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
+                                                       cond.z, mixture.y, mixture.z)
+    for (id in 1:nrow(X.ref)) {
+      cond.block[id, , ] <- p.z.cond.y.slice
+    }
+    cond.mat <- matrix(NA, nrow(X.ref), Nz + 1)
+    for (j in seq(length(y.ref))) {
+      if (!is.na(y.ref[j])) {
+        cond.mat[j, ] <- cond.block[j, y.ref[j] + 1,
+        ]
+      }
+      else {
+        cond.mat[j, ] <- rep(1/(Nz + 1), Nz + 1)
+      }
+    }
+    return(cond.mat)
+  }
+  else {
+    if (length(ref.cols) == 1) {
+      X.un <- data.frame(tmp = unique((X.ref[, ref.cols])))
+    }
+    else {
+      X.un <- unique_X(X.ref[, ref.cols])
+    }
+    colnames(X.un) = ref.cols
+    if (length(ref.cols) != length(ker.set)) {
+      stop("ref.cols and ker.set must be the same length")
+    }
+    if (missing(cond.y) | missing(cond.y)) {
+      stop("must specify conditional distributions")
+    }
+    if (missing(mu.y) | missing(mu.z)) {
+      stop("must specify regularization parameters")
+    }
+    if (missing(Y.train) | missing(Z.train)) {
+      stop("must specify training data")
+    }
+    Ny <- length(cond.y(0.5)) - 1
+    Nz <- length(cond.z(0.5)) - 1
+    A.matrix.y <- compute_A_matrix_2(R.bins, cond.y)
+    A.matrix.z <- compute_A_matrix_2(R.bins, cond.z)
+    outcome.cols.y = stringr::str_detect(colnames(Y.train),
+                                         "y\\d+") | stringr::str_detect(colnames(Y.train),
+                                                                        "y")
+    outcome.cols.z = stringr::str_detect(colnames(Z.train),
+                                         "z\\d+") | stringr::str_detect(colnames(Z.train),
+                                                                        "z")
+    y.tr <- as.matrix(Y.train[, outcome.cols.y])
+    z.tr <- as.matrix(Z.train[, outcome.cols.z])
+    X.train.Y <- as.data.frame(Y.train[, ref.cols])
+    X.train.Z <- as.data.frame(Z.train[, ref.cols])
+    colnames(X.train.Y) = ref.cols
+    colnames(X.train.Z) = ref.cols
+    cond.block <- array(NA, c(nrow(X.ref), Ny + 1, Nz + 1))
+    for (i in seq(nrow(X.un))) {
+      if (verbose) {
+        cat(paste("Unique mixture estimate:", i, "/",
+                  nrow(X.un)), end = "\r")
+      }
+      x <- as.numeric(X.un[i, ])
+      weights.y <- weight_vec(x, X.train.Y, ker.set)
+      weights.z <- weight_vec(x, X.train.Z, ker.set)
+      p.hat.y <- compute_edf(y.tr[, 1], Ny, weights.y)
+      p.hat.z <- compute_edf(z.tr[, 1], Nz, weights.z)
+
+      mix.y <- estimate_mixing_npem(p.hat.y, A.matrix.y,
+                                    mu.y, threshold = threshold, max.iter = max.iter)
+      mix.z <- estimate_mixing_npem(p.hat.z, A.matrix.z,
+                                    mu.z, threshold = threshold, max.iter = max.iter)
+
+      mixture.y <- mix.y$latent
+      mixture.z <- mix.z$latent
+      p.z.cond.y.slice <- conditional_imputation_model_2(cond.y,
+                                                         cond.z, mixture.y, mixture.z, R.bins)
+      if (length(ref.cols) > 1) {
+        match.idx <- which(apply(X.ref[, ref.cols], 1,
+                                 function(z) return(all(z == x))))
+      }
+      else {
+        match.idx <- which(X.ref[, ref.cols] == x)
+      }
+      for (id in match.idx) {
+        cond.block[id, , ] <- p.z.cond.y.slice
+      }
+    }
+    cond.mat <- matrix(NA, nrow(X.ref), Nz + 1)
+    for (j in seq(length(y.ref))) {
+      if (!is.na(y.ref[j])) {
+        cond.mat[j, ] <- cond.block[j, y.ref[j] + 1,
+        ]
+      }
+      else {
+        cond.mat[j, ] <- rep(1/(Nz + 1), Nz + 1)
+      }
+    }
+  }
+  return(cond.mat)
+}
+
+
+
+#' Evaluation of Cross Entropy On A Test Set
+#'
+#' @param p.mat Matrix of predicted probabilities
+#' @param z.vec Vector of outcomes (Train or test)
+#'
+#' @return Normalized Cross Entropy
+#' @export
+#'
+empirical_cross_entropy <- function(p.mat, z.vec){
+  out <- 0
+  n = nrow(p.mat)
+  for(j in seq(n)){
+    out <- out + log(p.mat[j,z.vec[j] + 1])
+  }
+  return(out/n)
+}
+
+
+
+
+#' Naive Conversion Method
+#'
+#' @export
+#'
+normalScoreConversionProb <- function(y.vec,muy,sdy,muz,sdz, Nz, n.samp = 20000){
+
+  z.prob <- matrix(NA, nrow = length(y.vec), ncol = Nz + 1)
+
+  for(i in seq(length(y.vec))){
+    y <- y.vec[i]
+    z.pred <- muz + (sdz/sdy)*(y - muy)
+    eps <- rnorm(n.samp, mean = 0, sd = sdz)
+
+    # replace the sampled version with the cdf
+    reference.points <- c(seq(1,Nz) - 0.5, Inf)
+    cdf.vals <- c(0,pnorm(reference.points, mean = z.pred, sd = sdz))
+    out <- rep(0,Nz + 1)
+    for(j in seq(length(cdf.vals) - 1)){
+      out[j] = cdf.vals[j + 1] - cdf.vals[j]
+    }
+    z.prob[i,] = out
+  }
+  return(z.prob)
+}
+
+
+
+
+
+
 #' @export
 #'
 conditional_imputation_model_2 <- function (cond.y, cond.z, mixture.y, mixture.z,
@@ -901,77 +1110,6 @@ ImputationRegressionGEE <- function(formula, X, Z.impute, ...){
 }
 
 
-
-FeasibilityTest <- function(y,cond){
-
-}
-
-
-# requires a pre-fit on the univariate data
-BivariateFeasibilityTest <- function(yz.pairs, cond.y, cond.z,
-                                     latent.y, latent.z, method = "Guo"){
-  qy <- quantiles_from_weights(latent.y)
-  qz <- quantiles_from_weights(latent.z)
-
-  if(length(qy) != length(qz)){
-    stop("latent distributions must have the same grid")
-  }
-  Ny <- length(cond.y(0.5)) - 1
-  Nz <- length(cond.z(0.5)) - 1
-
-  nq <- length(qy)
-
-  p.yz <- matrix(data = 0, nrow = Ny + 1, ncol = Nz + 1)
-
-  for(i in seq(nq)){
-    gam <- qy[i]
-    zet <- qz[i]
-    py <- cond.y(gam)
-    pz <- cond.z(zet)
-    p.yz.slice <- outer(py,pz,"*")
-    p.yz <- p.yz + p.yz.slice
-
-  }
-  #p.yz <- p.yz/nq
-  #normalization
-  p.yz <- p.yz/sum(p.yz)
-
-  emp.p.yz <- matrix(data = 0, nrow = Ny + 1, ncol = Nz + 1)
-
-  for(j in seq(nrow(yz.pairs))){
-    emp.p.yz[yz.pairs[j,1] + 1, yz.pairs[j,2] + 1] = emp.p.yz[yz.pairs[j,1] + 1, yz.pairs[j,2] + 1] + 1
-  }
-  emp.p.yz <- emp.p.yz/sum(emp.p.yz)
-
-  kldiv <- kl_divergence(emp.p.yz, emp.p.yz)
-  dim.k <- length(emp.p.yz) - 1
-  n.obs <- nrow(yz.pairs)
-
-  if(method == "Guo"){
-    p.cons <- tryCatch(                       # Applying tryCatch
-      expr = {                      # Specifying expression
-        tailProbBound(kldiv,dim.k, n.obs)
-        #message("Everything was fine.")
-      },
-
-      error = function(e){          # Specifying error message
-        message("Error in Guo Method")
-      },
-
-      warning = function(w){        # Specifying warning message
-        message("Warning in Guo Method")
-      },
-
-      finally = {                   # Specifying final message
-        #message("tryCatch is finished.")
-      }
-    )
-
-  } else {
-    p.cons <- mardia_tail_bound(kldiv,dim.k, n.obs)
-  }
-  return(min(p.cons,1))
-}
 
 
 
