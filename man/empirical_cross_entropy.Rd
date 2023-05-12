@@ -2,7 +2,7 @@
 % Please edit documentation in R/ConversionRegression.R
 \name{empirical_cross_entropy}
 \alias{empirical_cross_entropy}
-\title{Evaluation of Cross Entropy On A Test Set}
+\title{Evaluation of Average Cross Entropy On A Test Set}
 \usage{
 empirical_cross_entropy(p.mat, z.vec)
 }
@@ -15,5 +15,5 @@ empirical_cross_entropy(p.mat, z.vec)
 Normalized Cross Entropy
 }
 \description{
-Evaluation of Cross Entropy On A Test Set
+Evaluation of Average Cross Entropy On A Test Set
 }

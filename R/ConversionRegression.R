@@ -506,7 +506,7 @@ predictedDistributions <- function (X.ref, y.ref,  Y.train, Z.train, cond.y,
 
 
 
-#' Evaluation of Cross Entropy On A Test Set
+#' Evaluation of Average Cross Entropy On A Test Set
 #'
 #' @param p.mat Matrix of predicted probabilities
 #' @param z.vec Vector of outcomes (Train or test)
@@ -520,7 +520,7 @@ empirical_cross_entropy <- function(p.mat, z.vec){
   for(j in seq(n)){
     out <- out + log(p.mat[j,z.vec[j] + 1])
   }
-  return(out/n)
+  return(-out/n)
 }
 
 
