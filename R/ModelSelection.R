@@ -42,7 +42,8 @@ error_model_selection_bivariate <- function(cond.set, Y, R.bins, cond.names, ver
 
 #' @export
 #'
-mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
+mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T, latent.true = NULL){
+
   res <- rep(NA, length(mu.set))
   A.matrix <- compute_A_matrix_2(R.bins, cond)
   N = length(cond(0.5)) - 1
@@ -57,6 +58,9 @@ mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
 
     mu <- mu.set[[i]]
     obj <- 0
+    if(!is.null(latent.true)){
+      obj.latent.dist <- 0
+    }
     for(k in seq(folds)){
       val.idx = idx.folds[[k]]
       Y.val <- Y[val.idx,]
@@ -68,11 +72,18 @@ mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T){
       mixture <- as.vector(model$latent)
       p.ma <- as.numeric(A.matrix %*% mixture)
       obj <- obj - (1/folds)*kl_divergence(p.hat.val,p.ma)
+      if(!is.null(latent.true)){
+        obj.latent.dist <- obj.latent.dist + (1/folds)*Wasserstein(latent.true,mixture)
+      }
+
     }
     res[i] <- obj
   }
   i.min <- which.min(res)
   out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res)
+  if(!is.null(latent.true)){
+    out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res, "cv.lat.dist" = obj.latent.dist)
+  }
   if(verbose){
     plot(mu.set,res)
   }

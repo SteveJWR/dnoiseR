@@ -178,3 +178,16 @@ colSDs <- function(X, ...){
   return(sd.vec)
 }
 
+
+#' @export
+#'
+Wasserstein <- function(p,q) {
+  P_cdf = cumsum(p)
+  P_cdf = P_cdf/sum(P_cdf)
+  Q_cdf = cumsum(q)
+  Q_cdf = Q_cdf/sum(Q_cdf)
+  R = length(P_cdf)
+  W = (1/R)* sum(abs(P_cdf - Q_cdf))
+  return(W)
+}
+
