@@ -45,6 +45,10 @@ error_model_selection_bivariate <- function(cond.set, Y, R.bins, cond.names, ver
 mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T, latent.true = NULL){
 
   res <- rep(NA, length(mu.set))
+  if(!is.null(latent.true)){
+    res.lat.dist<- rep(NA, length(mu.set))
+  }
+
   A.matrix <- compute_A_matrix_2(R.bins, cond)
   N = length(cond(0.5)) - 1
   n = nrow(Y)
@@ -78,11 +82,12 @@ mu_selection <- function(mu.set, cond, Y, R.bins, folds = 5, verbose = T, latent
 
     }
     res[i] <- obj
+    res.lat.dist[i] <- obj.latent.dist
   }
   i.min <- which.min(res)
   out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res)
   if(!is.null(latent.true)){
-    out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res, "cv.lat.dist" = obj.latent.dist)
+    out.list <- list("opt.mu" = mu.set[[i.min]], "cv.lik" = res, "cv.lat.dist" = res.lat.dist)
   }
   if(verbose){
     plot(mu.set,res)
