@@ -932,6 +932,8 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
   }
   idx.y = seq(nrow(Y.train))
   idx.z = seq(nrow(Z.train))
+  idx.ref = seq(length(y.ref))
+
   X.frame = X.ref
   X.frame$complete = 1 * !is.na(X.frame$Z)
   coef.boot = NULL
@@ -942,7 +944,13 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
     Y.train.boot = Y.train[boot.idx.y, ]
     Z.train.boot = Z.train[boot.idx.z, ]
 
-    Z.impute <- ImputeOutcomes(X.ref, y.ref, z.ref, n.impute,
+    # Added the simple bootstrap conversion here
+    boot.idx.ref = sample(idx.ref, replace = T)
+    X.ref.boot = X.ref[boot.idx.ref,]
+    y.ref.boot = y.ref[boot.idx.ref]
+    z.ref.boot = z.ref[boot.idx.ref]
+
+    Z.impute <- ImputeOutcomes(X.ref.boot, y.ref.boot, z.ref.boot, n.impute,
                                Y.train.boot, Z.train.boot, cond.y, cond.z, mu.y, mu.z, ref.cols,
                                ker.set, R.bins, verbose = F, max.iter = max.iter,
                                init.latents = TRUE, latent.set.covariates = latent.set.covariates,
@@ -953,19 +961,15 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
     if (is.null(coef.boot)) {
       coef.boot <- matrix(NA, ncol = length(res.tmp$coefficients),
                           nrow = B.boot)
-      coef.boot[b, ] <- res.tmp$coefficients
     }
-    else {
-      coef.boot[b, ] <- res.tmp$coefficients
-    }
+    coef.boot[b, ] <- res.tmp$coefficients
+
     if (is.null(var.boot)) {
       var.boot <- matrix(NA, ncol = length(res.tmp$variance),
                          nrow = B.boot)
-      var.boot[b, ] <- res.tmp$variance
     }
-    else {
-      var.boot[b, ] <- res.tmp$variance
-    }
+    var.boot[b, ] <- res.tmp$variance
+
     if (verbose) {
       m1 = (round(20 * b/B.boot))
       m2 = 20 - m1
@@ -976,9 +980,9 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
     }
   }
   beta.est <- colMeans(coef.boot, na.rm = T)
-  total.var.block <- matrix(data = colMeans(var.boot, na.rm = T),
-                            nrow = length(beta.est), ncol = length(beta.est)) + var(coef.boot,
-                                                                                    na.rm = T)
+  # total.var.block <- matrix(data = colMeans(var.boot, na.rm = T),
+  #                           nrow = length(beta.est), ncol = length(beta.est)) + var(coef.boot, na.rm = T)
+  total.var.block <- var(coef.boot,na.rm = T)
   z.scores <- beta.est/sqrt(diag(total.var.block))
   p.vals.imp <- 2 * pnorm(-abs(z.scores))
   out.list <- list(coefficients = beta.est, variance = total.var.block,
