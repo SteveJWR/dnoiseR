@@ -1,9 +1,3 @@
-# Function: conditional distribution generated according to the measurement kernel model
-# Input: N;  must be an integer
-#        ker, number of repeated observations per individual; integer
-#        h, bandwidth; > 0
-# Output: Conditional Distribution Function for the Measurement Kernel Model
-
 #' Conditional distribution function for the measurement kernel model
 #'
 #' @param N Number of Questions

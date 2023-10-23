@@ -946,17 +946,18 @@ ImputationRegressionGLMBootstrap <- function (formula, X.ref, y.ref, z.ref, n.im
 
     # Added the simple bootstrap conversion here
     boot.idx.ref = sample(idx.ref, replace = T)
-    X.ref.boot = X.ref[boot.idx.ref,]
+    X.frame.boot = X.frame[boot.idx.ref,]
     y.ref.boot = y.ref[boot.idx.ref]
     z.ref.boot = z.ref[boot.idx.ref]
 
-    Z.impute <- ImputeOutcomes(X.ref.boot, y.ref.boot, z.ref.boot, n.impute,
+    Z.impute <- ImputeOutcomes(X.frame.boot, y.ref.boot, z.ref.boot, n.impute,
                                Y.train.boot, Z.train.boot, cond.y, cond.z, mu.y, mu.z, ref.cols,
                                ker.set, R.bins, verbose = F, max.iter = max.iter,
                                init.latents = TRUE, latent.set.covariates = latent.set.covariates,
                                init.latent.set.y = init.latent.set.y, init.latent.set.z = init.latent.set.z)
 
-    res.tmp <- ImputationRegressionGLM(formula, X.frame,
+
+    res.tmp <- ImputationRegressionGLM(formula, X.frame.boot,
                                        Z.impute, fit.cc = F)
     if (is.null(coef.boot)) {
       coef.boot <- matrix(NA, ncol = length(res.tmp$coefficients),
